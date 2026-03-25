@@ -1,0 +1,17 @@
+import { Router } from 'express';
+import { PaymentController } from '../controllers/payment.controller';
+import { RefundController } from '../controllers/refund.controller';
+import { authenticate, authorizeSalonMember, authorize } from '../middleware/auth';
+import { validate } from '../middleware/validate';
+import { createOrderValidator, verifyPaymentValidator, withdrawValidator } from '../validators/payment.validator';
+
+const router = Router();
+
+router.post('/create-order', authenticate, validate(createOrderValidator), PaymentController.createOrder);
+router.post('/verify', authenticate, validate(verifyPaymentValidator), PaymentController.verifyPayment);
+router.post('/:paymentId/refund', authenticate, RefundController.initiateRefund);
+router.get('/salon/:salonId/earnings', authenticate, authorizeSalonMember('owner', 'manager', 'stylist', 'receptionist'), PaymentController.getEarnings);
+router.post('/salon/:salonId/withdraw', authenticate, authorizeSalonMember('owner'), validate(withdrawValidator), PaymentController.requestWithdrawal);
+router.get('/salon/:salonId/withdrawals', authenticate, authorizeSalonMember('owner', 'manager'), PaymentController.getWithdrawals);
+
+export default router;
