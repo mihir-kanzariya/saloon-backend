@@ -5,10 +5,10 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "tsc",
+    "build": "npx tsc",
     "start": "node dist/server.js",
-    "lint": "tsc --noEmit",
-    "seed": "ts-node src/seed.ts",
+    "lint": "npx tsc --noEmit",
+    "seed": "npx ts-node src/seed.ts",
     "test": "jest --passWithNoTests"
   },
   "keywords": [],
