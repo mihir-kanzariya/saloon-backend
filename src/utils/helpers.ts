@@ -61,9 +61,9 @@ export const sanitizePhone = (phone: string | undefined | null): string | null =
 };
 
 export const generateBookingNumber = (): string => {
-  const timestamp = Date.now().toString(36).toUpperCase();
-  const random = crypto.randomBytes(3).toString('hex').toUpperCase();
-  return `BK${timestamp}${random}`;
+  // Use the new TX ID format for consistency
+  const { generateTxId } = require('./id-generator');
+  return generateTxId('BK');
 };
 
 export const addMinutesToTime = (time: string, minutes: number): string => {

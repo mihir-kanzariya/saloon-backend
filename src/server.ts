@@ -7,6 +7,8 @@ import { startIncentiveCron } from './jobs/incentive.cron';
 import { startWebhookReplayCron } from './jobs/webhook-replay.cron';
 import { startArchivalCron } from './jobs/archival.cron';
 import { startPaymentExpiryCron } from './jobs/payment-expiry.cron';
+import { startBookingReminderCron } from './jobs/booking-reminder.cron';
+import { startDailySummaryCron } from './jobs/daily-summary.cron';
 
 const startServer = async (): Promise<void> => {
   try {
@@ -36,6 +38,8 @@ const startServer = async (): Promise<void> => {
       startWebhookReplayCron();
       startArchivalCron();
       startPaymentExpiryCron();
+      startBookingReminderCron();
+      startDailySummaryCron();
     }
 
     // Graceful shutdown

@@ -10,6 +10,7 @@ import Salon from '../models/Salon';
 
 interface TimeSlot {
   time: string;
+  end_time: string;
   available: boolean;
 }
 
@@ -75,7 +76,7 @@ export class SchedulingService {
     const stylists = await SalonMember.findAll({ where: stylistFilter });
 
     if (stylists.length === 0) {
-      return allSlots.map((time: string) => ({ time, available: false }));
+      return allSlots.map((time: string) => ({ time, end_time: addMinutesToTime(time, totalDurationMinutes), available: false }));
     }
 
     const stylistIds = stylists.map((s: any) => s.id);
@@ -175,7 +176,8 @@ export class SchedulingService {
         break;
       }
 
-      result.push({ time: slot, available: isAvailable });
+      const slotEnd = addMinutesToTime(slot, totalDurationMinutes);
+      result.push({ time: slot, end_time: slotEnd, available: isAvailable });
     }
 
     return result;

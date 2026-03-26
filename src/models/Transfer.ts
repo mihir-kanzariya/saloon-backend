@@ -7,6 +7,11 @@ const Transfer: any = sequelize.define('Transfer', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  tx_id: {
+    type: DataTypes.STRING(25),
+    allowNull: true,
+    unique: true,
+  },
   settlement_batch_id: {
     type: DataTypes.UUID,
     allowNull: true,

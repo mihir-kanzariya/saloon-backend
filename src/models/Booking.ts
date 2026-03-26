@@ -12,6 +12,11 @@ const Booking: any = sequelize.define('Booking', {
     allowNull: false,
     unique: true,
   },
+  tx_id: {
+    type: DataTypes.STRING(25),
+    allowNull: true,
+    unique: true,
+  },
   customer_id: {
     type: DataTypes.UUID,
     allowNull: false,
@@ -56,7 +61,19 @@ const Booking: any = sequelize.define('Booking', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
   },
+  promo_code_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'promo_codes',
+      key: 'id',
+    },
+  },
   discount_amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+  },
+  platform_fee: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0,
   },

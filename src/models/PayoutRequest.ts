@@ -7,6 +7,11 @@ const PayoutRequest: any = sequelize.define('PayoutRequest', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  tx_id: {
+    type: DataTypes.STRING(25),
+    allowNull: true,
+    unique: true,
+  },
   salon_id: {
     type: DataTypes.UUID,
     allowNull: false,

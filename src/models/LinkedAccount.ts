@@ -68,6 +68,14 @@ const LinkedAccount: any = sequelize.define('LinkedAccount', {
     type: DataTypes.STRING(200),
     allowNull: true,
   },
+  bank_name: {
+    type: DataTypes.STRING(200),
+    allowNull: true,
+  },
+  bank_verified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
   kyc_status: {
     type: DataTypes.ENUM('not_started', 'pending', 'verified', 'failed'),
     defaultValue: 'pending',

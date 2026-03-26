@@ -15,8 +15,10 @@ import Salon from '../models/Salon';
 import Transfer from '../models/Transfer';
 import SettlementBatch from '../models/SettlementBatch';
 import PayoutRequest from '../models/PayoutRequest';
+import LinkedAccount from '../models/LinkedAccount';
 import RazorpayService from '../services/razorpay.service';
 import PricingService from '../services/pricing.service';
+import { generateTxId } from '../utils/id-generator';
 import { createEarningIfNotExists } from '../utils/earning.helper';
 import { auditLog } from '../utils/audit-logger';
 
@@ -49,6 +51,7 @@ export class PaymentController {
           booking_id,
           payment_type: payment_type || 'full',
           status: 'created',
+        tx_id: generateTxId('PAY'),
           created_at: { [Op.gte]: new Date(Date.now() - 30 * 60 * 1000) },
         },
       });
@@ -88,6 +91,7 @@ export class PaymentController {
         amount,
         payment_type: payment_type || 'full',
         status: 'created',
+        tx_id: generateTxId('PAY'),
         notes: order.notes || {},
       });
 
@@ -246,11 +250,25 @@ export class PaymentController {
   static async requestWithdrawal(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { salonId } = req.params;
-      const { amount, bank_details } = req.body;
+      const { amount } = req.body;
 
       if (amount < config.app.minWithdrawalAmount) {
         throw ApiError.badRequest(`Minimum withdrawal amount is ${config.app.minWithdrawalAmount}`);
       }
+
+      // Fetch saved bank details from LinkedAccount
+      const linkedAccount = await LinkedAccount.findOne({ where: { salon_id: salonId } });
+      if (!linkedAccount || !linkedAccount.bank_account_number || !linkedAccount.bank_ifsc || !linkedAccount.bank_beneficiary_name) {
+        throw ApiError.badRequest('Please set up your bank account first');
+      }
+
+      // Snapshot bank details at withdrawal time
+      const bank_details = {
+        holder_name: linkedAccount.bank_beneficiary_name,
+        account_number: linkedAccount.bank_account_number,
+        ifsc: linkedAccount.bank_ifsc,
+        bank_name: linkedAccount.bank_name || null,
+      };
 
       // Wrap balance check + withdrawal in a transaction with row locking
       const withdrawal = await sequelize.transaction(async (t: any) => {

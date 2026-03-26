@@ -7,6 +7,11 @@ const SettlementBatch: any = sequelize.define('SettlementBatch', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  tx_id: {
+    type: DataTypes.STRING(25),
+    allowNull: true,
+    unique: true,
+  },
   batch_number: {
     type: DataTypes.STRING(20),
     allowNull: false,

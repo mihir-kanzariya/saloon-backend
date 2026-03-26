@@ -7,6 +7,7 @@ import { ApiError } from '../utils/apiError';
 import { SchedulingService } from '../services/scheduling.service';
 import { NotificationService } from '../services/notification.service';
 import { generateBookingNumber, addMinutesToTime, parsePagination } from '../utils/helpers';
+import { generateTxId } from '../utils/id-generator';
 import config from '../config';
 
 import Booking from '../models/Booking';
@@ -19,6 +20,8 @@ import ChatRoom from '../models/ChatRoom';
 import Review from '../models/Review';
 import Payment from '../models/Payment';
 import SalonEarning from '../models/SalonEarning';
+import PromoCode from '../models/PromoCode';
+import PromoUsage from '../models/PromoUsage';
 import RefundService from '../services/refund.service';
 
 export class BookingController {
@@ -118,6 +121,7 @@ export class BookingController {
 
         const newBooking = await Booking.create({
           booking_number: generateBookingNumber(),
+          tx_id: generateTxId('BK'),
           customer_id: req.user!.id,
           salon_id,
           stylist_member_id: assignedStylistId,
@@ -192,7 +196,7 @@ export class BookingController {
    */
   static async createWithPayment(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salon_id, service_ids, booking_date, start_time, stylist_member_id, customer_notes } = req.body;
+      const { salon_id, service_ids, booking_date, start_time, stylist_member_id, customer_notes, promo_code } = req.body;
 
       const salon = await Salon.findByPk(salon_id);
       if (!salon || !salon.is_active) throw ApiError.notFound('Salon not found or inactive');
@@ -236,6 +240,50 @@ export class BookingController {
       );
       if (!isAvailable) throw ApiError.badRequest('Selected time slot is no longer available');
 
+      // Promo code validation (re-validate to prevent tampering)
+      let discountAmount = 0;
+      let promoCodeId: string | null = null;
+
+      if (promo_code) {
+        const today = new Date().toISOString().split('T')[0];
+        const promo = await PromoCode.findOne({
+          where: { code: promo_code.toUpperCase(), is_active: true },
+        });
+        if (!promo) throw ApiError.badRequest('Invalid promo code');
+
+        if (today < promo.valid_from || today > promo.valid_until) {
+          throw ApiError.badRequest('This promo code has expired');
+        }
+        if (promo.max_uses > 0 && promo.current_uses >= promo.max_uses) {
+          throw ApiError.badRequest('This promo code has reached its usage limit');
+        }
+        if (promo.salon_id && promo.salon_id !== salon_id) {
+          throw ApiError.badRequest('This promo code is not valid for this salon');
+        }
+        const minOrder = parseFloat(promo.min_order);
+        if (minOrder > 0 && subtotal < minOrder) {
+          throw ApiError.badRequest(`Minimum order amount is \u20B9${minOrder.toFixed(0)} for this promo code`);
+        }
+        const existingUsage = await PromoUsage.findOne({
+          where: { user_id: req.user!.id, promo_code_id: promo.id },
+        });
+        if (existingUsage) throw ApiError.badRequest('You have already used this promo code');
+
+        // Calculate discount
+        const discountValue = parseFloat(promo.discount_value);
+        if (promo.discount_type === 'percent') {
+          discountAmount = (subtotal * discountValue) / 100;
+          const maxDiscount = promo.max_discount ? parseFloat(promo.max_discount) : Infinity;
+          discountAmount = Math.min(discountAmount, maxDiscount);
+        } else {
+          discountAmount = Math.min(discountValue, subtotal);
+        }
+        discountAmount = Math.round(discountAmount * 100) / 100;
+        promoCodeId = promo.id;
+      }
+
+      const totalAmount = Math.round((subtotal - discountAmount) * 100) / 100;
+
       // Payment hold expiry
       const holdMinutes = config.app.paymentHoldMinutes || 10;
       const paymentExpiresAt = new Date(Date.now() + holdMinutes * 60 * 1000);
@@ -262,6 +310,7 @@ export class BookingController {
 
         const newBooking = await Booking.create({
           booking_number: generateBookingNumber(),
+          tx_id: generateTxId('BK'),
           customer_id: req.user!.id,
           salon_id,
           stylist_member_id: assignedStylistId,
@@ -270,8 +319,9 @@ export class BookingController {
           end_time: endTime,
           total_duration_minutes: totalDuration,
           subtotal,
-          discount_amount: 0,
-          total_amount: subtotal,
+          promo_code_id: promoCodeId,
+          discount_amount: discountAmount,
+          total_amount: totalAmount,
           payment_mode: 'online',
           token_amount: 0,
           status: 'awaiting_payment',
@@ -290,12 +340,28 @@ export class BookingController {
         }));
         await BookingService.bulkCreate(bookingServices, { transaction: t });
 
+        // Create promo usage record and increment counter
+        if (promoCodeId) {
+          await PromoUsage.create({
+            user_id: req.user!.id,
+            promo_code_id: promoCodeId,
+            booking_id: newBooking.id,
+            discount_amount: discountAmount,
+          }, { transaction: t });
+
+          await PromoCode.increment('current_uses', {
+            by: 1,
+            where: { id: promoCodeId },
+            transaction: t,
+          });
+        }
+
         // Create payment record + Razorpay order
         const RazorpayService = (await import('../services/razorpay.service')).default;
         const rzp = RazorpayService.getInstance();
 
         const order = await rzp.createOrder({
-          amount: rzp.toPaise(subtotal),
+          amount: rzp.toPaise(totalAmount),
           currency: 'INR',
           receipt: newBooking.booking_number,
           notes: { booking_id: newBooking.id, salon_id, payment_type: 'full' },
@@ -306,7 +372,7 @@ export class BookingController {
           user_id: req.user!.id,
           salon_id,
           razorpay_order_id: order.id,
-          amount: subtotal,
+          amount: totalAmount,
           payment_type: 'full',
           status: 'created',
         }, { transaction: t });

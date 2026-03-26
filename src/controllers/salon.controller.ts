@@ -13,6 +13,7 @@ import User from '../models/User';
 import Review from '../models/Review';
 import FavoriteSalon from '../models/FavoriteSalon';
 import Booking from '../models/Booking';
+import LinkedAccount from '../models/LinkedAccount';
 
 export class SalonController {
   // Create salon
@@ -341,6 +342,110 @@ export class SalonController {
 
       await member.update({ is_active: false });
       ApiResponse.success(res, { message: 'Member removed' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Update bank account for salon
+  static async updateBankAccount(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { salonId } = req.params;
+      const { holder_name, account_number, ifsc, bank_name } = req.body;
+
+      if (!holder_name || !account_number || !ifsc) {
+        throw ApiError.badRequest('holder_name, account_number, and ifsc are required');
+      }
+
+      // Validate IFSC format
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase())) {
+        throw ApiError.badRequest('Invalid IFSC code format');
+      }
+
+      // Auto-fetch bank name if not provided
+      let resolvedBankName = bank_name || null;
+      if (!resolvedBankName) {
+        try {
+          const axios = require('axios');
+          const resp = await axios.get(`https://ifsc.razorpay.com/${ifsc.toUpperCase()}`);
+          resolvedBankName = resp.data.BANK || null;
+        } catch (_) {
+          // Silently ignore — bank_name remains null
+        }
+      }
+
+      const salon = await Salon.findByPk(salonId);
+      if (!salon) throw ApiError.notFound('Salon not found');
+
+      const [linkedAccount, created] = await LinkedAccount.findOrCreate({
+        where: { salon_id: salonId },
+        defaults: {
+          salon_id: salonId,
+          legal_business_name: salon.name,
+          contact_name: holder_name,
+          contact_email: salon.email || 'noreply@example.com',
+          contact_phone: salon.phone || '0000000000',
+          bank_account_number: account_number,
+          bank_ifsc: ifsc.toUpperCase(),
+          bank_beneficiary_name: holder_name,
+          bank_name: resolvedBankName,
+        },
+      });
+
+      if (!created) {
+        await linkedAccount.update({
+          bank_account_number: account_number,
+          bank_ifsc: ifsc.toUpperCase(),
+          bank_beneficiary_name: holder_name,
+          bank_name: resolvedBankName,
+        });
+      }
+
+      const masked = account_number.length > 4
+        ? '****' + account_number.slice(-4)
+        : account_number;
+
+      ApiResponse.success(res, {
+        message: 'Bank account updated successfully',
+        data: {
+          holder_name: linkedAccount.bank_beneficiary_name,
+          account_number_masked: masked,
+          ifsc: linkedAccount.bank_ifsc,
+          bank_name: linkedAccount.bank_name,
+          bank_verified: linkedAccount.bank_verified,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get bank account for salon
+  static async getBankAccount(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { salonId } = req.params;
+
+      const linkedAccount = await LinkedAccount.findOne({ where: { salon_id: salonId } });
+
+      if (!linkedAccount || !linkedAccount.bank_account_number) {
+        ApiResponse.success(res, { data: null });
+        return;
+      }
+
+      const accNum = linkedAccount.bank_account_number;
+      const masked = accNum.length > 4
+        ? '****' + accNum.slice(-4)
+        : accNum;
+
+      ApiResponse.success(res, {
+        data: {
+          holder_name: linkedAccount.bank_beneficiary_name,
+          account_number_masked: masked,
+          ifsc: linkedAccount.bank_ifsc,
+          bank_name: linkedAccount.bank_name,
+          bank_verified: linkedAccount.bank_verified,
+        },
+      });
     } catch (error) {
       next(error);
     }

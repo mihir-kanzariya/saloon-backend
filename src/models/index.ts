@@ -22,6 +22,8 @@ import Transfer from './Transfer';
 import SettlementBatch from './SettlementBatch';
 import WebhookEvent from './WebhookEvent';
 import PayoutRequest from './PayoutRequest';
+import PromoCode from './PromoCode';
+import PromoUsage from './PromoUsage';
 
 // =====================
 // User <-> Salon
@@ -282,6 +284,30 @@ PayoutRequest.belongsTo(Salon, { foreignKey: 'salon_id', as: 'salon' });
 User.hasMany(PayoutRequest, { foreignKey: 'initiated_by', as: 'initiated_payouts' });
 PayoutRequest.belongsTo(User, { foreignKey: 'initiated_by', as: 'initiator' });
 
+// =====================
+// Salon <-> PromoCode
+// =====================
+Salon.hasMany(PromoCode, { foreignKey: 'salon_id', as: 'promo_codes' });
+PromoCode.belongsTo(Salon, { foreignKey: 'salon_id', as: 'salon' });
+
+// =====================
+// User <-> PromoUsage
+// =====================
+User.hasMany(PromoUsage, { foreignKey: 'user_id', as: 'promo_usages' });
+PromoUsage.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+// =====================
+// PromoCode <-> PromoUsage
+// =====================
+PromoCode.hasMany(PromoUsage, { foreignKey: 'promo_code_id', as: 'usages' });
+PromoUsage.belongsTo(PromoCode, { foreignKey: 'promo_code_id', as: 'promo_code' });
+
+// =====================
+// Booking <-> PromoUsage
+// =====================
+Booking.hasOne(PromoUsage, { foreignKey: 'booking_id', as: 'promo_usage' });
+PromoUsage.belongsTo(Booking, { foreignKey: 'booking_id', as: 'booking' });
+
 export {
   User,
   Salon,
@@ -307,4 +333,6 @@ export {
   SettlementBatch,
   WebhookEvent,
   PayoutRequest,
+  PromoCode,
+  PromoUsage,
 };

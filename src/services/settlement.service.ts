@@ -5,6 +5,7 @@ import RazorpayService from './razorpay.service';
 import PricingService from './pricing.service';
 import { NotificationService } from './notification.service';
 import config from '../config';
+import { generateTxId, generateSettlementTxId } from '../utils/id-generator';
 import { auditLog } from '../utils/audit-logger';
 import { SalonSettlementData } from '../types';
 
@@ -43,6 +44,7 @@ class SettlementService {
     // Create batch record
     const batch = await SettlementBatch.create({
       batch_number: batchNumber,
+      tx_id: generateSettlementTxId(),
       period_start: periodStart,
       period_end: periodEnd,
       status: 'processing',
@@ -225,6 +227,7 @@ class SettlementService {
         linked_account_id: data.linkedAccountId,
         amount: data.finalTransferAmount,
         status: 'created',
+        tx_id: generateTxId('TRF'),
         source_type: 'direct',
         idempotency_key: idempotencyKey,
         metadata: {

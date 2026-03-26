@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 
-const Notification: any = sequelize.define('Notification', {
+const PromoUsage: any = sequelize.define('PromoUsage', {
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
@@ -15,33 +15,33 @@ const Notification: any = sequelize.define('Notification', {
       key: 'id',
     },
   },
-  title: {
-    type: DataTypes.STRING(255),
+  promo_code_id: {
+    type: DataTypes.UUID,
     allowNull: false,
+    references: {
+      model: 'promo_codes',
+      key: 'id',
+    },
   },
-  body: {
-    type: DataTypes.TEXT,
+  booking_id: {
+    type: DataTypes.UUID,
     allowNull: false,
+    references: {
+      model: 'bookings',
+      key: 'id',
+    },
   },
-  type: {
-    type: DataTypes.STRING(50),
+  discount_amount: {
+    type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
-  },
-  data: {
-    type: DataTypes.JSONB,
-    defaultValue: {},
-  },
-  is_read: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false,
   },
 }, {
-  tableName: 'notifications',
+  tableName: 'promo_usages',
   timestamps: true,
   underscored: true,
   indexes: [
-    { fields: ['user_id', 'is_read', 'created_at'] },
+    { fields: ['user_id', 'promo_code_id'], unique: true },
   ],
 });
 
-export default Notification;
+export default PromoUsage;

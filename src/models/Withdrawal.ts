@@ -7,6 +7,11 @@ const Withdrawal: any = sequelize.define('Withdrawal', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  tx_id: {
+    type: DataTypes.STRING(25),
+    allowNull: true,
+    unique: true,
+  },
   salon_id: {
     type: DataTypes.UUID,
     allowNull: false,

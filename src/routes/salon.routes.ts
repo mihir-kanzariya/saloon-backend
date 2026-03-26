@@ -22,4 +22,8 @@ router.post('/:salonId/members/invite', authenticate, authorizeSalonMember('owne
 router.get('/:salonId/members', authenticate, authorizeSalonMember('owner', 'manager', 'receptionist'), SalonController.getMembers);
 router.delete('/:salonId/members/:memberId', authenticate, authorizeSalonMember('owner'), SalonController.removeMember);
 
+// Bank account
+router.put('/:salonId/bank-account', authenticate, authorizeSalonMember('owner'), SalonController.updateBankAccount);
+router.get('/:salonId/bank-account', authenticate, authorizeSalonMember('owner', 'manager'), SalonController.getBankAccount);
+
 export default router;

@@ -26,6 +26,8 @@ import uploadRoutes from './routes/upload.routes';
 import onboardingRoutes from './routes/onboarding.routes';
 import webhookRoutes from './routes/webhook.routes';
 import adminRoutes from './routes/admin.routes';
+import utilsRoutes from './routes/utils.routes';
+import promoRoutes from './routes/promo.routes';
 
 const app = express();
 
@@ -110,6 +112,8 @@ app.use(`${config.apiPrefix}/notifications`, notificationRoutes);
 app.use(`${config.apiPrefix}/uploads`, uploadRoutes);
 app.use(`${config.apiPrefix}/salons`, onboardingRoutes);
 app.use(`${config.apiPrefix}/admin`, adminRoutes);
+app.use(`${config.apiPrefix}/utils`, utilsRoutes);
+app.use(`${config.apiPrefix}/promo-codes`, promoRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {
