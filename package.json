@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "./node_modules/.bin/tsc",
+    "build": "npx --yes tsc",
     "start": "node dist/server.js",
     "lint": "npx tsc --noEmit",
     "seed": "npx ts-node src/seed.ts",
