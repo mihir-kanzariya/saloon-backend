@@ -6,7 +6,7 @@ import { ApiError } from '../utils/apiError';
 import { auditLog } from '../utils/audit-logger';
 import config from '../config';
 
-const MAX_BOOKING_AMOUNT = 100000; // ₹1 lakh
+
 
 interface RefundResult {
   path: 'pre_transfer' | 'post_transfer';
@@ -53,7 +53,7 @@ class RefundService {
       const refundAmount = params.amount || parseFloat(payment.amount);
 
       // Validate refund amount
-      if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > MAX_BOOKING_AMOUNT) {
+      if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > (config.app.maxBookingAmount || 100000)) {
         throw ApiError.badRequest('Invalid refund amount');
       }
 

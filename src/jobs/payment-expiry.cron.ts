@@ -1,3 +1,4 @@
+import { NotificationService } from '../services/notification.service';
 import cron from 'node-cron';
 import { Op } from 'sequelize';
 import { Booking } from '../models';
@@ -33,6 +34,14 @@ export function startPaymentExpiryCron(): void {
           salon_id: booking.salon_id,
           amount: booking.total_amount,
         });
+
+        NotificationService.send({
+          userId: booking.customer_id,
+          title: 'Booking Slot Expired',
+          body: 'Your payment window has expired. The slot has been released. Please book again.',
+          type: 'booking_expired',
+          data: { booking_id: booking.id },
+        }).catch(() => {});
       }
 
       console.log(`[Payment Expiry] Cancelled ${expired.length} unpaid booking(s)`);

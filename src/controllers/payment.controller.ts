@@ -22,7 +22,7 @@ import { generateTxId } from '../utils/id-generator';
 import { createEarningIfNotExists } from '../utils/earning.helper';
 import { auditLog } from '../utils/audit-logger';
 
-const MAX_BOOKING_AMOUNT = 100000; // ₹1 lakh
+
 
 export class PaymentController {
   // Create Razorpay order
@@ -41,7 +41,7 @@ export class PaymentController {
         amount = parseFloat(booking.total_amount);
       }
 
-      if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_BOOKING_AMOUNT) {
+      if (!Number.isFinite(amount) || amount <= 0 || amount > (config.app.maxBookingAmount || 100000)) {
         throw ApiError.badRequest('Invalid payment amount');
       }
 

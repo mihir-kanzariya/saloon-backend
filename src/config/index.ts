@@ -65,6 +65,7 @@ const config = {
     incentiveBookingThreshold: parseInt(process.env.INCENTIVE_BOOKING_THRESHOLD || '150', 10),
     incentiveAmount: parseInt(process.env.INCENTIVE_AMOUNT || '10000', 10),
     paymentHoldMinutes: parseInt(process.env.PAYMENT_HOLD_MINUTES || '10', 10),
+    maxBookingAmount: parseInt(process.env.MAX_BOOKING_AMOUNT || '100000', 10),
   },
 
   // CORS

@@ -128,6 +128,25 @@ app.get(`${config.apiPrefix}/config/public`, (_req, res) => {
       supabase_anon_key: config.supabase.anonKey || '',
     },
   });
+
+// App config endpoint — returns branding, limits, features for mobile clients
+app.get(`${config.apiPrefix}/config/app`, (_req, res) => {
+  ApiResponse.success(res, {
+    data: {
+      app_name: process.env.APP_NAME || 'HeloHair',
+      tagline: process.env.APP_TAGLINE || 'Never wait at a salon again',
+      logo_url: process.env.LOGO_URL || '',
+      primary_color: process.env.PRIMARY_COLOR || '#1F6A63',
+      currency: 'INR',
+      max_booking_amount: config.app.maxBookingAmount || 100000,
+      min_withdrawal: config.app.minWithdrawalAmount,
+      commission_percent: config.app.platformCommissionPercent,
+      payment_hold_minutes: config.app.paymentHoldMinutes || 10,
+      support_email: process.env.SUPPORT_EMAIL || 'support@helohair.com',
+      features: { promo_enabled: true, incentive_enabled: true },
+    },
+  });
+});
 });
 
 // 404 handler
