@@ -12,6 +12,9 @@ import Booking from '../models/Booking';
 import SalonEarning from '../models/SalonEarning';
 import Withdrawal from '../models/Withdrawal';
 import Salon from '../models/Salon';
+import Transfer from '../models/Transfer';
+import SettlementBatch from '../models/SettlementBatch';
+import PayoutRequest from '../models/PayoutRequest';
 import RazorpayService from '../services/razorpay.service';
 import PricingService from '../services/pricing.service';
 import { createEarningIfNotExists } from '../utils/earning.helper';
@@ -292,6 +295,69 @@ export class PaymentController {
         limit,
         offset,
       });
+      ApiResponse.paginated(res, { data: rows, page, limit, total: count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get incentive progress for salon
+  static async getIncentiveProgress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { salonId } = req.params;
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const daysRemaining = Math.ceil((monthEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Count completed bookings this month
+      const count = await Booking.count({
+        where: {
+          salon_id: salonId,
+          status: 'completed',
+          booking_date: { [Op.gte]: monthStart.toISOString().split('T')[0] },
+        },
+      });
+
+      // Get past incentive payouts
+      const pastIncentives = await PayoutRequest.findAll({
+        where: { salon_id: salonId, type: 'incentive' },
+        order: [['created_at', 'DESC']],
+        limit: 6,
+      });
+
+      ApiResponse.success(res, {
+        data: {
+          current_month_bookings: count,
+          threshold: config.app.incentiveBookingThreshold,
+          bonus_amount: config.app.incentiveAmount,
+          eligible: count >= config.app.incentiveBookingThreshold,
+          days_remaining: daysRemaining,
+          month: monthStart.toISOString().split('T')[0],
+          past_incentives: pastIncentives,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get settlement history for salon
+  static async getSettlements(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { salonId } = req.params;
+      const { page, limit, offset } = parsePagination(req.query);
+
+      const { rows, count } = await Transfer.findAndCountAll({
+        where: { salon_id: salonId },
+        order: [['created_at', 'DESC']],
+        limit,
+        offset,
+        include: [
+          { model: SettlementBatch, as: 'settlement_batch', attributes: ['id', 'batch_number', 'period_start', 'period_end', 'status'] },
+        ],
+      });
+
       ApiResponse.paginated(res, { data: rows, page, limit, total: count });
     } catch (error) {
       next(error);

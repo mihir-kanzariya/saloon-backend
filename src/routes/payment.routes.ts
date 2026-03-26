@@ -13,5 +13,7 @@ router.post('/:paymentId/refund', authenticate, RefundController.initiateRefund)
 router.get('/salon/:salonId/earnings', authenticate, authorizeSalonMember('owner', 'manager', 'stylist', 'receptionist'), PaymentController.getEarnings);
 router.post('/salon/:salonId/withdraw', authenticate, authorizeSalonMember('owner'), validate(withdrawValidator), PaymentController.requestWithdrawal);
 router.get('/salon/:salonId/withdrawals', authenticate, authorizeSalonMember('owner', 'manager'), PaymentController.getWithdrawals);
+router.get('/salon/:salonId/incentive-progress', authenticate, authorizeSalonMember('owner', 'manager'), PaymentController.getIncentiveProgress);
+router.get('/salon/:salonId/settlements', authenticate, authorizeSalonMember('owner', 'manager'), PaymentController.getSettlements);
 
 export default router;
