@@ -46,10 +46,12 @@ const Salon: any = sequelize.define('Salon', {
   latitude: {
     type: DataTypes.DECIMAL(10, 7),
     allowNull: false,
+    defaultValue: 23.0225,
   },
   longitude: {
     type: DataTypes.DECIMAL(10, 7),
     allowNull: false,
+    defaultValue: 72.5714,
   },
   gender_type: {
     type: DataTypes.ENUM('men', 'women', 'unisex'),
