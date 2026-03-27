@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import { StylistController } from '../controllers/stylist.controller';
+import { StylistBrowseController } from '../controllers/stylist-browse.controller';
 import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { createMemberValidator, updateMemberValidator, assignServicesValidator, setAvailabilityValidator, addBreakValidator, addLeaveValidator } from '../validators/stylist.validator';
 
 const router = Router();
+
+// Browse stylists (must be BEFORE /:memberId routes)
+router.get('/nearby', StylistBrowseController.getNearby);
 
 router.post('/', authenticate, validate(createMemberValidator), StylistController.create);
 router.put('/:memberId', authenticate, validate(updateMemberValidator), StylistController.update);
