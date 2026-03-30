@@ -50,7 +50,9 @@ export class SchedulingService {
     const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
     const operatingHours = salon.operating_hours[dayOfWeek];
 
-    if (!operatingHours || !operatingHours.is_open) {
+    // Support both is_open:true and is_closed:false formats
+    const isClosed = operatingHours.is_closed === true || operatingHours.is_open === false;
+    if (!operatingHours || isClosed) {
       return [];
     }
 
