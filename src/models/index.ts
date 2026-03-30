@@ -277,17 +277,13 @@ Booking.belongsTo(SettlementBatch, { foreignKey: 'settlement_batch_id', as: 'set
 // =====================
 // Salon <-> PayoutRequest
 // =====================
-Salon.hasMany(PayoutRequest,
-  Wallet,
-  WalletLedger, { foreignKey: 'salon_id', as: 'payout_requests' });
+Salon.hasMany(PayoutRequest, { foreignKey: 'salon_id', as: 'payout_requests' });
 PayoutRequest.belongsTo(Salon, { foreignKey: 'salon_id', as: 'salon' });
 
 // =====================
 // User <-> PayoutRequest (initiated_by)
 // =====================
-User.hasMany(PayoutRequest,
-  Wallet,
-  WalletLedger, { foreignKey: 'initiated_by', as: 'initiated_payouts' });
+User.hasMany(PayoutRequest, { foreignKey: 'initiated_by', as: 'initiated_payouts' });
 PayoutRequest.belongsTo(User, { foreignKey: 'initiated_by', as: 'initiator' });
 
 // =====================
