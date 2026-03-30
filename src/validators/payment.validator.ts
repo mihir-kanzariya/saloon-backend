@@ -13,8 +13,4 @@ export const verifyPaymentValidator = [
 
 export const withdrawValidator = [
   body('amount').isFloat({ min: 1 }).withMessage('Amount must be positive'),
-  body('bank_details').isObject().withMessage('Bank details required'),
-  body('bank_details.account_number').isString().notEmpty(),
-  body('bank_details.ifsc_code').isString().notEmpty(),
-  body('bank_details.account_holder_name').isString().notEmpty(),
 ];

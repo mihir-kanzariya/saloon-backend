@@ -440,6 +440,7 @@ export class SalonController {
       ApiResponse.success(res, {
         data: {
           holder_name: linkedAccount.bank_beneficiary_name,
+          account_number: masked,
           account_number_masked: masked,
           ifsc: linkedAccount.bank_ifsc,
           bank_name: linkedAccount.bank_name,
