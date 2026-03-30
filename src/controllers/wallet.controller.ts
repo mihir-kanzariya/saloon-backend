@@ -21,7 +21,7 @@ export class WalletController {
    */
   static async getSummary(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salonId } = req.params;
+      const salonId = req.params.salonId as string;
       const summary = await WalletService.getWalletSummary(salonId);
 
       // Get pending withdrawal total
@@ -46,9 +46,9 @@ export class WalletController {
    */
   static async getLedger(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salonId } = req.params;
+      const salonId = req.params.salonId as string;
       const { page, limit } = parsePagination(req.query);
-      const type = req.query.type as string | undefined;
+      const type = (req.query.type as string) || undefined;
 
       const where: any = { salon_id: salonId };
       if (type) where.type = type;
@@ -70,7 +70,7 @@ export class WalletController {
    */
   static async requestWithdrawal(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salonId } = req.params;
+      const salonId = req.params.salonId as string;
       const { amount } = req.body;
 
       if (!amount || amount < config.app.minWithdrawalAmount) {
@@ -130,7 +130,7 @@ export class WalletController {
    */
   static async getWithdrawals(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salonId } = req.params;
+      const salonId = req.params.salonId as string;
       const { page, limit } = parsePagination(req.query);
 
       const { rows, count } = await Withdrawal.findAndCountAll({
