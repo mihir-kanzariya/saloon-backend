@@ -22,6 +22,8 @@ import Transfer from './Transfer';
 import SettlementBatch from './SettlementBatch';
 import WebhookEvent from './WebhookEvent';
 import PayoutRequest from './PayoutRequest';
+import Wallet from './Wallet';
+import WalletLedger from './WalletLedger';
 import PromoCode from './PromoCode';
 import PromoUsage from './PromoUsage';
 
@@ -275,13 +277,17 @@ Booking.belongsTo(SettlementBatch, { foreignKey: 'settlement_batch_id', as: 'set
 // =====================
 // Salon <-> PayoutRequest
 // =====================
-Salon.hasMany(PayoutRequest, { foreignKey: 'salon_id', as: 'payout_requests' });
+Salon.hasMany(PayoutRequest,
+  Wallet,
+  WalletLedger, { foreignKey: 'salon_id', as: 'payout_requests' });
 PayoutRequest.belongsTo(Salon, { foreignKey: 'salon_id', as: 'salon' });
 
 // =====================
 // User <-> PayoutRequest (initiated_by)
 // =====================
-User.hasMany(PayoutRequest, { foreignKey: 'initiated_by', as: 'initiated_payouts' });
+User.hasMany(PayoutRequest,
+  Wallet,
+  WalletLedger, { foreignKey: 'initiated_by', as: 'initiated_payouts' });
 PayoutRequest.belongsTo(User, { foreignKey: 'initiated_by', as: 'initiator' });
 
 // =====================
@@ -308,6 +314,17 @@ PromoUsage.belongsTo(PromoCode, { foreignKey: 'promo_code_id', as: 'promo_code' 
 Booking.hasOne(PromoUsage, { foreignKey: 'booking_id', as: 'promo_usage' });
 PromoUsage.belongsTo(Booking, { foreignKey: 'booking_id', as: 'booking' });
 
+// =====================
+// Salon <-> Wallet (1:1)
+// =====================
+Salon.hasOne(Wallet, { foreignKey: 'salon_id', as: 'wallet' });
+Wallet.belongsTo(Salon, { foreignKey: 'salon_id', as: 'salon' });
+
+// =====================
+// Wallet <-> WalletLedger
+// =====================
+Wallet.hasMany(WalletLedger, { foreignKey: 'wallet_id', as: 'ledger_entries' });
+WalletLedger.belongsTo(Wallet, { foreignKey: 'wallet_id', as: 'wallet' });
 export {
   User,
   Salon,
@@ -333,6 +350,8 @@ export {
   SettlementBatch,
   WebhookEvent,
   PayoutRequest,
+  Wallet,
+  WalletLedger,
   PromoCode,
   PromoUsage,
 };
