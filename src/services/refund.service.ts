@@ -4,6 +4,7 @@ import { Payment, Booking, SalonEarning } from '../models';
 import RazorpayService from './razorpay.service';
 import { ApiError } from '../utils/apiError';
 import { auditLog } from '../utils/audit-logger';
+import { WalletService } from './wallet.service';
 import config from '../config';
 
 

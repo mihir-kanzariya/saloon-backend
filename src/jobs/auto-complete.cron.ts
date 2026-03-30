@@ -1,3 +1,4 @@
+import { WalletService } from '../services/wallet.service';
 import cron from 'node-cron';
 import { Op, literal } from 'sequelize';
 import { Booking, SalonEarning, Salon } from '../models';

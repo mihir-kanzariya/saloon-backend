@@ -21,6 +21,7 @@ import PricingService from '../services/pricing.service';
 import { generateTxId } from '../utils/id-generator';
 import { createEarningIfNotExists } from '../utils/earning.helper';
 import { auditLog } from '../utils/audit-logger';
+import { WalletService } from '../services/wallet.service';
 
 
 

@@ -4,6 +4,7 @@ import { sequelize } from '../config/database';
 import { Payment, Booking, SalonEarning, LinkedAccount, Salon, Transfer, WebhookEvent } from '../models';
 import RazorpayService from '../services/razorpay.service';
 import { createEarningIfNotExists } from '../utils/earning.helper';
+import { WalletService } from '../services/wallet.service';
 import { auditLog } from '../utils/audit-logger';
 import { NotificationService } from '../services/notification.service';
 import User from '../models/User';
