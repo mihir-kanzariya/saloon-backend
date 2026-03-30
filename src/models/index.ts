@@ -315,13 +315,8 @@ Booking.hasOne(PromoUsage, { foreignKey: 'booking_id', as: 'promo_usage' });
 PromoUsage.belongsTo(Booking, { foreignKey: 'booking_id', as: 'booking' });
 
 // =====================
-// Salon <-> Wallet (1:1)
-// =====================
-Salon.hasOne(Wallet, { foreignKey: 'salon_id', as: 'wallet' });
-Wallet.belongsTo(Salon, { foreignKey: 'salon_id', as: 'salon' });
-
-// =====================
-// Wallet <-> WalletLedger
+// Wallet <-> WalletLedger (Salon↔Wallet skipped to avoid Node22+Sequelize6 Object.assign bug)
+// Wallet uses salon_id FK directly via WalletService.getOrCreateWallet()
 // =====================
 Wallet.hasMany(WalletLedger, { foreignKey: 'wallet_id', as: 'ledger_entries' });
 WalletLedger.belongsTo(Wallet, { foreignKey: 'wallet_id', as: 'wallet' });
