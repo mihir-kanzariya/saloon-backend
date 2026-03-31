@@ -641,12 +641,18 @@ export class BookingController {
   static async getSalonBookings(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { salonId } = req.params;
-      const { status, date, stylist_member_id, filter } = req.query;
+      const { status, date, date_from, date_to, stylist_member_id, filter } = req.query;
       const { page, limit, offset } = parsePagination(req.query);
 
       const where: any = { salon_id: salonId };
       if (status) where.status = status;
-      if (date) where.booking_date = date;
+      if (date) {
+        where.booking_date = date;
+      } else if (date_from || date_to) {
+        where.booking_date = {};
+        if (date_from) where.booking_date[Op.gte] = String(date_from);
+        if (date_to) where.booking_date[Op.lte] = String(date_to);
+      }
       if (stylist_member_id) where.stylist_member_id = stylist_member_id;
 
       // Handle upcoming/past filters
