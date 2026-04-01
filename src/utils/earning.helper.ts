@@ -1,6 +1,7 @@
 import { Transaction } from 'sequelize';
 import { SalonEarning, Salon } from '../models';
 import PricingService from '../services/pricing.service';
+import { WalletService } from '../services/wallet.service';
 import { auditLog } from './audit-logger';
 
 /**
@@ -39,6 +40,15 @@ export async function createEarningIfNotExists(params: {
   });
 
   if (created) {
+    // Credit the salon's wallet with the net amount (held for 7 days)
+    await WalletService.creditEarning({
+      salonId,
+      amount: breakdown.netAmount,
+      bookingId,
+      description: `Earning from booking`,
+      transaction,
+    });
+
     auditLog('earning.created', {
       booking_id: bookingId,
       salon_id: salonId,
