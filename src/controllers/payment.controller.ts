@@ -52,7 +52,6 @@ export class PaymentController {
           booking_id,
           payment_type: payment_type || 'full',
           status: 'created',
-        tx_id: generateTxId('PAY'),
           created_at: { [Op.gte]: new Date(Date.now() - 30 * 60 * 1000) },
         },
       });
@@ -229,11 +228,11 @@ export class PaymentController {
       });
 
       // Summary always covers the full filtered dataset (not just the current page)
-      const summary = await SalonEarning.findOne({
+      const summary: any = await SalonEarning.findOne({
         where,
         include: stylist_member_id ? [{ ...bookingInclude, attributes: [] }] : [],
         attributes: [
-          [sequelize.fn('SUM', sequelize.col('SalonEarning.total_amount')), 'total_revenue'],
+          [sequelize.fn('SUM', sequelize.col('SalonEarning.total_amount')), 'total_earned'],
           [sequelize.fn('SUM', sequelize.col('commission_amount')), 'total_commission'],
           [sequelize.fn('SUM', sequelize.col('net_amount')), 'total_net'],
           [sequelize.fn('COUNT', sequelize.col('SalonEarning.id')), 'total_bookings'],
@@ -241,7 +240,36 @@ export class PaymentController {
         raw: true,
       });
 
-      ApiResponse.paginated(res, { data: { earnings, summary }, page, limit, total: count });
+      // Calculate pending and settled amounts for withdrawal availability
+      const settledSum: any = await SalonEarning.findOne({
+        where: { ...where, status: 'settled' },
+        attributes: [
+          [sequelize.fn('SUM', sequelize.col('net_amount')), 'settled_amount'],
+        ],
+        raw: true,
+      });
+      const pendingSum: any = await SalonEarning.findOne({
+        where: { ...where, status: 'pending' },
+        attributes: [
+          [sequelize.fn('SUM', sequelize.col('net_amount')), 'pending_amount'],
+        ],
+        raw: true,
+      });
+
+      ApiResponse.paginated(res, {
+        data: {
+          total_earned: parseFloat(summary?.total_earned || '0'),
+          total_commission: parseFloat(summary?.total_commission || '0'),
+          total_net: parseFloat(summary?.total_net || '0'),
+          total_bookings: parseInt(summary?.total_bookings || '0'),
+          pending_amount: parseFloat(pendingSum?.pending_amount || '0'),
+          settled_amount: parseFloat(settledSum?.settled_amount || '0'),
+          earnings,
+        },
+        page,
+        limit,
+        total: count,
+      });
     } catch (error) {
       next(error);
     }
@@ -345,14 +373,17 @@ export class PaymentController {
         limit: 6,
       });
 
+      const threshold = config.app.incentiveBookingThreshold;
       ApiResponse.success(res, {
         data: {
-          current_month_bookings: count,
-          threshold: config.app.incentiveBookingThreshold,
-          bonus_amount: config.app.incentiveAmount,
-          eligible: count >= config.app.incentiveBookingThreshold,
+          current_bookings: count,
+          threshold,
+          incentive_amount: config.app.incentiveAmount,
+          progress_percent: threshold > 0 ? Math.round((count / threshold) * 100) : 0,
+          period_start: monthStart.toISOString().split('T')[0],
+          period_end: monthEnd.toISOString().split('T')[0],
+          eligible: count >= threshold,
           days_remaining: daysRemaining,
-          month: monthStart.toISOString().split('T')[0],
           past_incentives: pastIncentives,
         },
       });
@@ -373,11 +404,32 @@ export class PaymentController {
         limit,
         offset,
         include: [
-          { model: SettlementBatch, as: 'settlement_batch', attributes: ['id', 'batch_number', 'period_start', 'period_end', 'status'] },
+          { model: SettlementBatch, as: 'settlement_batch', attributes: ['id', 'batch_number', 'period_start', 'period_end', 'status', 'total_gross_amount', 'total_commission', 'total_net_amount', 'total_salons', 'total_bookings'] },
         ],
       });
 
-      ApiResponse.paginated(res, { data: rows, page, limit, total: count });
+      // Flatten Transfer + SettlementBatch into the shape the admin panel expects
+      const settlements = rows.map((transfer: any) => {
+        const batch = transfer.settlement_batch;
+        return {
+          id: transfer.id,
+          tx_id: transfer.tx_id,
+          batch_number: batch?.batch_number || '--',
+          period_start: batch?.period_start || null,
+          period_end: batch?.period_end || null,
+          status: transfer.status,
+          total_gross_amount: parseFloat(transfer.amount || '0') + parseFloat(transfer.metadata?.refund_adjustments || '0'),
+          total_commission: parseFloat(transfer.metadata?.total_net || '0') > 0
+            ? parseFloat(transfer.metadata?.total_net || '0') - parseFloat(transfer.amount || '0')
+            : 0,
+          total_net_amount: parseFloat(transfer.amount || '0'),
+          total_salons: batch?.total_salons || 1,
+          total_bookings: transfer.metadata?.booking_ids?.length || 0,
+          created_at: transfer.created_at,
+        };
+      });
+
+      ApiResponse.paginated(res, { data: settlements, page, limit, total: count });
     } catch (error) {
       next(error);
     }
