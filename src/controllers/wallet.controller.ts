@@ -90,15 +90,8 @@ export class WalletController {
         throw ApiError.badRequest(`Linked account is "${linkedAccount.status}". Withdrawals require an activated account.`);
       }
 
-      // Step 1: Debit wallet + create withdrawal record (atomic)
+      // Step 1: Create withdrawal record + debit wallet (atomic)
       const withdrawal = await sequelize.transaction(async (t) => {
-        await WalletService.debitWithdrawal({
-          salonId,
-          amount,
-          withdrawalId: 'pending',
-          transaction: t,
-        });
-
         const w = await Withdrawal.create({
           tx_id: generateTxId('WDR'),
           salon_id: salonId,
@@ -112,6 +105,13 @@ export class WalletController {
           },
           status: 'pending',
         }, { transaction: t });
+
+        await WalletService.debitWithdrawal({
+          salonId,
+          amount,
+          withdrawalId: w.id,
+          transaction: t,
+        });
 
         return w;
       });
