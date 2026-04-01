@@ -10,6 +10,7 @@ import { startPaymentExpiryCron } from './jobs/payment-expiry.cron';
 import { startHoldReleaseCron } from './jobs/hold-release.cron';
 import { startBookingReminderCron } from './jobs/booking-reminder.cron';
 import { startDailySummaryCron } from './jobs/daily-summary.cron';
+import { startWithdrawalRetryCron } from './jobs/withdrawal-retry.cron';
 
 const startServer = async (): Promise<void> => {
   try {
@@ -42,6 +43,7 @@ const startServer = async (): Promise<void> => {
       startHoldReleaseCron();
       startBookingReminderCron();
       startDailySummaryCron();
+      startWithdrawalRetryCron();
     }
 
     // Graceful shutdown

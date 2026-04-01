@@ -2,6 +2,10 @@ import { Request, Response } from 'express';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database';
 import { Payment, Booking, SalonEarning, LinkedAccount, Salon, Transfer, WebhookEvent } from '../models';
+import Withdrawal from '../models/Withdrawal';
+import Wallet from '../models/Wallet';
+import WalletLedger from '../models/WalletLedger';
+import { generateTxId } from '../utils/id-generator';
 import RazorpayService from '../services/razorpay.service';
 import { createEarningIfNotExists } from '../utils/earning.helper';
 import { WalletService } from '../services/wallet.service';
@@ -229,24 +233,37 @@ export class WebhookController {
     const transferEntity = payload.payload?.transfer?.entity;
     if (!transferEntity) return;
 
+    // Check if this is a withdrawal transfer (has withdrawal_id in notes)
+    const withdrawalId = transferEntity.notes?.withdrawal_id;
+    if (withdrawalId) {
+      await Withdrawal.update(
+        { status: 'processing', transaction_reference: transferEntity.id },
+        { where: { id: withdrawalId } }
+      );
+      auditLog('withdrawal.transfer_processed', { withdrawal_id: withdrawalId, razorpay_transfer_id: transferEntity.id });
+    }
+
+    // Handle settlement transfers
     await Transfer.update(
       { status: 'processed' },
       { where: { razorpay_transfer_id: transferEntity.id } }
     );
 
-    // Notify salon owner: "Transfer processed"
+    // Notify salon owner
+    const salonId = withdrawalId
+      ? (await Withdrawal.findByPk(withdrawalId, { attributes: ['salon_id'] }))?.salon_id
+      : (await Transfer.findOne({ where: { razorpay_transfer_id: transferEntity.id }, attributes: ['salon_id', 'amount'] }))?.salon_id;
     const transfer = await Transfer.findOne({ where: { razorpay_transfer_id: transferEntity.id } });
-    if (transfer) {
-      const salon = await Salon.findByPk(transfer.salon_id, { attributes: ['id', 'owner_id', 'name'] });
-      if (salon) {
-        NotificationService.send({
-          userId: salon.owner_id,
-          title: 'Payout Initiated',
-          body: `₹${transfer.amount} payout for ${salon.name} has been processed. It will reach your bank in 1-2 business days.`,
-          type: 'transfer_processed',
-          data: { salon_id: salon.id, transfer_id: transfer.id, amount: String(transfer.amount) },
-        }).catch(() => {});
-      }
+    const salon = salonId ? await Salon.findByPk(salonId, { attributes: ['id', 'owner_id', 'name'] }) : null;
+    if (salon) {
+      const amt = transfer?.amount || transferEntity.amount / 100;
+      NotificationService.send({
+        userId: salon.owner_id,
+        title: 'Payout Initiated',
+        body: `₹${amt} payout for ${salon.name} has been processed. It will reach your bank in 1-2 business days.`,
+        type: 'transfer_processed',
+        data: { salon_id: salon.id, amount: String(amt) },
+      }).catch(() => {});
     }
   }
 
@@ -254,24 +271,37 @@ export class WebhookController {
     const transferEntity = payload.payload?.transfer?.entity;
     if (!transferEntity) return;
 
+    // Check if this is a withdrawal transfer
+    const withdrawalId = transferEntity.notes?.withdrawal_id;
+    if (withdrawalId) {
+      await Withdrawal.update(
+        { status: 'completed', processed_at: new Date(), transaction_reference: transferEntity.id },
+        { where: { id: withdrawalId } }
+      );
+      auditLog('withdrawal.completed', { withdrawal_id: withdrawalId, razorpay_transfer_id: transferEntity.id });
+    }
+
+    // Handle settlement transfers
     await Transfer.update(
       { status: 'settled' },
       { where: { razorpay_transfer_id: transferEntity.id } }
     );
 
-    // Notify salon owner: "Payout settled to bank"
+    // Notify salon owner
+    const salonId = withdrawalId
+      ? (await Withdrawal.findByPk(withdrawalId, { attributes: ['salon_id'] }))?.salon_id
+      : (await Transfer.findOne({ where: { razorpay_transfer_id: transferEntity.id }, attributes: ['salon_id'] }))?.salon_id;
     const transfer = await Transfer.findOne({ where: { razorpay_transfer_id: transferEntity.id } });
-    if (transfer) {
-      const salon = await Salon.findByPk(transfer.salon_id, { attributes: ['id', 'owner_id', 'name'] });
-      if (salon) {
-        NotificationService.send({
-          userId: salon.owner_id,
-          title: 'Payout Settled',
-          body: `₹${transfer.amount} has been credited to your bank account for ${salon.name}. Check your bank statement.`,
-          type: 'transfer_settled',
-          data: { salon_id: salon.id, transfer_id: transfer.id, amount: String(transfer.amount) },
-        }).catch(() => {});
-      }
+    const salon = salonId ? await Salon.findByPk(salonId, { attributes: ['id', 'owner_id', 'name'] }) : null;
+    if (salon) {
+      const amt = transfer?.amount || transferEntity.amount / 100;
+      NotificationService.send({
+        userId: salon.owner_id,
+        title: 'Payout Settled',
+        body: `₹${amt} has been credited to your bank account for ${salon.name}. Check your bank statement.`,
+        type: 'transfer_settled',
+        data: { salon_id: salon.id, amount: String(amt) },
+      }).catch(() => {});
     }
   }
 
@@ -279,7 +309,64 @@ export class WebhookController {
     const transferEntity = payload.payload?.transfer?.entity;
     if (!transferEntity) return;
 
-    // Atomic rollback — wrap in transaction
+    // Check if this is a withdrawal transfer
+    const withdrawalId = transferEntity.notes?.withdrawal_id;
+    if (withdrawalId) {
+      // Re-credit wallet and mark withdrawal as failed
+      await sequelize.transaction(async (t) => {
+        const withdrawal = await Withdrawal.findByPk(withdrawalId, { transaction: t });
+        if (!withdrawal || withdrawal.status === 'failed') return;
+
+        await withdrawal.update({
+          status: 'failed',
+          remarks: transferEntity.error?.description || 'Razorpay transfer failed',
+        }, { transaction: t });
+
+        // Re-credit the wallet since the transfer didn't go through
+        const wallet = await WalletService.getOrCreateWallet(withdrawal.salon_id, t);
+        await Wallet.findOne({ where: { id: wallet.id }, lock: true, transaction: t });
+
+        const amount = parseFloat(withdrawal.amount);
+        await wallet.update({
+          available_balance: parseFloat(wallet.available_balance) + amount,
+          total_balance: parseFloat(wallet.total_balance) + amount,
+          total_withdrawn: Math.max(0, parseFloat(wallet.total_withdrawn) - amount),
+        }, { transaction: t });
+
+        await WalletLedger.create({
+          tx_id: generateTxId('TXN'),
+          wallet_id: wallet.id,
+          salon_id: withdrawal.salon_id,
+          type: 'adjustment_credit',
+          amount,
+          direction: 'credit',
+          balance_after: parseFloat(wallet.available_balance) + amount,
+          reference_type: 'withdrawal',
+          reference_id: withdrawal.id,
+          description: 'Withdrawal transfer failed — funds returned to wallet',
+        }, { transaction: t });
+
+        auditLog('withdrawal.failed.refunded', {
+          withdrawal_id: withdrawalId,
+          amount,
+          razorpay_transfer_id: transferEntity.id,
+        });
+
+        const salon = await Salon.findByPk(withdrawal.salon_id, { attributes: ['id', 'owner_id', 'name'], transaction: t });
+        if (salon) {
+          NotificationService.send({
+            userId: salon.owner_id,
+            title: 'Withdrawal Failed',
+            body: `Your withdrawal of ₹${amount} could not be processed. The amount has been returned to your wallet.`,
+            type: 'withdrawal_failed',
+            data: { salon_id: salon.id, withdrawal_id: withdrawalId, amount: String(amount) },
+          }).catch(() => {});
+        }
+      });
+      return; // Don't fall through to settlement transfer handling
+    }
+
+    // Handle settlement transfer failure (existing logic)
     await sequelize.transaction(async (t) => {
       const transfer = await Transfer.findOne({
         where: { razorpay_transfer_id: transferEntity.id },
@@ -311,7 +398,6 @@ export class WebhookController {
         booking_count: bookingIds.length,
       });
 
-      // Notify salon owner: "Transfer failed, will retry"
       const salon = await Salon.findByPk(transfer.salon_id, { attributes: ['id', 'owner_id', 'name'], transaction: t });
       if (salon) {
         NotificationService.send({

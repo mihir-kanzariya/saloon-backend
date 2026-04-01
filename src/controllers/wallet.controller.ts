@@ -8,6 +8,7 @@ import { parsePagination } from '../utils/helpers';
 import { generateTxId } from '../utils/id-generator';
 import { auditLog } from '../utils/audit-logger';
 import { WalletService } from '../services/wallet.service';
+import RazorpayService from '../services/razorpay.service';
 import Wallet from '../models/Wallet';
 import WalletLedger from '../models/WalletLedger';
 import Withdrawal from '../models/Withdrawal';
@@ -77,22 +78,27 @@ export class WalletController {
         throw ApiError.badRequest(`Minimum withdrawal is ₹${config.app.minWithdrawalAmount}`);
       }
 
-      // Verify bank account exists
+      // Verify linked account exists and is activated
       const linkedAccount = await LinkedAccount.findOne({ where: { salon_id: salonId } });
       if (!linkedAccount || !linkedAccount.bank_account_number) {
         throw ApiError.badRequest('Please set up your bank account before requesting a withdrawal');
       }
+      if (!linkedAccount.razorpay_account_id) {
+        throw ApiError.badRequest('Razorpay linked account not set up. Please complete KYC onboarding.');
+      }
+      if (linkedAccount.status !== 'activated') {
+        throw ApiError.badRequest(`Linked account is "${linkedAccount.status}". Withdrawals require an activated account.`);
+      }
 
+      // Step 1: Debit wallet + create withdrawal record (atomic)
       const withdrawal = await sequelize.transaction(async (t) => {
-        // Debit wallet (checks balance inside)
         await WalletService.debitWithdrawal({
           salonId,
           amount,
-          withdrawalId: 'pending', // will update after creation
+          withdrawalId: 'pending',
           transaction: t,
         });
 
-        // Create withdrawal record with saved bank details
         const w = await Withdrawal.create({
           tx_id: generateTxId('WDR'),
           salon_id: salonId,
@@ -117,9 +123,49 @@ export class WalletController {
         tx_id: withdrawal.tx_id,
       });
 
+      // Step 2: Initiate Razorpay transfer (outside DB transaction)
+      // If this fails, the withdrawal stays 'pending' and is retried by the cron
+      try {
+        const rzp = RazorpayService.getInstance();
+        const transfer = await rzp.createDirectTransfer({
+          account: linkedAccount.razorpay_account_id,
+          amount: rzp.toPaise(amount),
+          currency: 'INR',
+          notes: {
+            withdrawal_id: withdrawal.id,
+            salon_id: salonId,
+            tx_id: withdrawal.tx_id,
+          },
+        });
+
+        await withdrawal.update({
+          status: 'processing',
+          transaction_reference: transfer.id,
+        });
+
+        auditLog('withdrawal.transfer_initiated', {
+          withdrawal_id: withdrawal.id,
+          razorpay_transfer_id: transfer.id,
+          amount,
+        });
+      } catch (transferErr: any) {
+        // Transfer failed — withdrawal stays 'pending', will be retried by cron
+        console.error(`[Wallet] Razorpay transfer failed for withdrawal ${withdrawal.id}:`, transferErr.message);
+        auditLog('withdrawal.transfer_failed', {
+          withdrawal_id: withdrawal.id,
+          error: transferErr.message,
+        });
+        // Don't throw — the wallet is already debited, cron will retry
+      }
+
+      // Re-fetch to return latest status
+      await withdrawal.reload();
+
       ApiResponse.created(res, {
         data: withdrawal,
-        message: 'Withdrawal request submitted. Processing within 2-3 business days.',
+        message: withdrawal.status === 'processing'
+          ? 'Withdrawal initiated. Funds will reach your bank within 2-3 business days.'
+          : 'Withdrawal queued. Transfer will be retried shortly.',
       });
     } catch (error) { next(error); }
   }
