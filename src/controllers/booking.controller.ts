@@ -29,7 +29,7 @@ export class BookingController {
   // Create booking
   static async create(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salon_id, service_ids, booking_date, start_time, stylist_member_id, payment_mode, customer_notes } = req.body;
+      const { salon_id, service_ids, booking_date, start_time, stylist_member_id, payment_mode, customer_notes, slot_type: requestedSlotType } = req.body;
 
       // Validate salon
       const salon = await Salon.findByPk(salon_id);
@@ -92,6 +92,27 @@ export class BookingController {
       );
       if (!isAvailable) throw ApiError.badRequest('Selected time slot is no longer available');
 
+      // Smart slot discount
+      let smartSlotType = 'regular';
+      let smartDiscountAmount = 0;
+      let finalAmount = subtotal;
+
+      if (requestedSlotType && requestedSlotType !== 'regular') {
+        const verification = await SmartSchedulingService.verifySmartSlot({
+          salonId: salon_id,
+          date: booking_date,
+          startTime: start_time,
+          serviceDuration: totalDuration,
+          servicePrice: subtotal,
+          stylistMemberId: assignedStylistId,
+        });
+        if (verification.isSmartSlot) {
+          smartSlotType = verification.slotType;
+          smartDiscountAmount = verification.discountAmount;
+          finalAmount = verification.finalPrice;
+        }
+      }
+
       // Determine initial status
       const initialStatus = salon.booking_settings.auto_accept_bookings ? 'confirmed' : 'pending';
       const tokenAmount = salon.booking_settings.require_prepayment ? salon.booking_settings.token_amount : 0;
@@ -131,13 +152,15 @@ export class BookingController {
           end_time: endTime,
           total_duration_minutes: totalDuration,
           subtotal,
-          discount_amount: 0,
-          total_amount: subtotal,
+          discount_amount: smartDiscountAmount,
+          total_amount: finalAmount,
           payment_mode: payment_mode || 'pay_at_salon',
           token_amount: tokenAmount,
           status: initialStatus,
           is_auto_assigned: isAutoAssigned,
           customer_notes: customer_notes || null,
+          slot_type: smartSlotType,
+          smart_discount: smartDiscountAmount,
         }, { transaction: t });
 
         // Create booking services
