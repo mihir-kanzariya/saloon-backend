@@ -121,6 +121,15 @@ const Booking: any = sequelize.define('Booking', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  // Smart slot tracking
+  slot_type: {
+    type: DataTypes.STRING(20),
+    defaultValue: 'regular',
+  },
+  smart_discount: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+  },
   // Settlement tracking fields
   settlement_status: {
     type: DataTypes.ENUM('not_applicable', 'pending_settlement', 'settled', 'refund_adjusted'),

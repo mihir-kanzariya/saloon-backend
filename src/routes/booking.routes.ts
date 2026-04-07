@@ -24,6 +24,7 @@ router.post('/:bookingId/cancel', authenticate, BookingController.cancel);
 // Salon
 router.get('/salon/:salonId', authenticate, authorizeSalonMember('owner', 'manager', 'receptionist', 'stylist'), BookingController.getSalonBookings);
 router.get('/salon/:salonId/slots', BookingController.getAvailableSlots);
+router.get('/salon/:salonId/smart-slots', BookingController.getSmartSlots);
 router.put('/:bookingId/status', authenticate, validate(updateBookingStatusValidation), BookingController.updateStatus);
 router.post('/:bookingId/collect-payment', authenticate, BookingController.collectPayment);
 router.post('/:bookingId/notify-customer', authenticate, BookingController.notifyCustomer);

@@ -5,6 +5,7 @@ import { AuthRequest } from '../types';
 import { ApiResponse } from '../utils/apiResponse';
 import { ApiError } from '../utils/apiError';
 import { SchedulingService } from '../services/scheduling.service';
+import { SmartSchedulingService } from '../services/smart-scheduling.service';
 import { NotificationService } from '../services/notification.service';
 import { generateBookingNumber, addMinutesToTime, parsePagination } from '../utils/helpers';
 import { generateTxId } from '../utils/id-generator';
@@ -196,7 +197,7 @@ export class BookingController {
    */
   static async createWithPayment(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { salon_id, service_ids, booking_date, start_time, stylist_member_id, customer_notes, promo_code } = req.body;
+      const { salon_id, service_ids, booking_date, start_time, stylist_member_id, customer_notes, promo_code, slot_type: requestedSlotType } = req.body;
 
       const salon = await Salon.findByPk(salon_id);
       if (!salon || !salon.is_active) throw ApiError.notFound('Salon not found or inactive');
@@ -282,6 +283,32 @@ export class BookingController {
         promoCodeId = promo.id;
       }
 
+      // Smart slot discount (only if no promo code or promo gives less discount)
+      let smartSlotType = 'regular';
+      let smartDiscountAmount = 0;
+
+      if (requestedSlotType && requestedSlotType !== 'regular') {
+        const verification = await SmartSchedulingService.verifySmartSlot({
+          salonId: salon_id,
+          date: booking_date,
+          startTime: start_time,
+          serviceDuration: totalDuration,
+          servicePrice: subtotal,
+          stylistMemberId: assignedStylistId,
+        });
+
+        if (verification.isSmartSlot) {
+          smartSlotType = verification.slotType;
+          smartDiscountAmount = verification.discountAmount;
+
+          // Use the BETTER discount for customer (smart vs promo, not both)
+          if (smartDiscountAmount > discountAmount) {
+            discountAmount = smartDiscountAmount;
+            promoCodeId = null; // smart discount wins over promo
+          }
+        }
+      }
+
       const totalAmount = Math.round((subtotal - discountAmount) * 100) / 100;
 
       // Payment hold expiry
@@ -328,6 +355,8 @@ export class BookingController {
           payment_expires_at: paymentExpiresAt,
           is_auto_assigned: isAutoAssigned,
           customer_notes: customer_notes || null,
+          slot_type: smartSlotType,
+          smart_discount: smartDiscountAmount,
         }, { transaction: t });
 
         // Create booking services
@@ -422,6 +451,29 @@ export class BookingController {
       );
 
       ApiResponse.success(res, { data: slots });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get smart slots with gap-filling pricing
+  static async getSmartSlots(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const salonId = req.params.salonId as string;
+      const { date, duration, price, stylist_member_id } = req.query;
+
+      if (!date || !duration) throw ApiError.badRequest('Date and duration are required');
+
+      const servicePrice = price ? parseFloat(String(price)) : 0;
+      const result = await SmartSchedulingService.getSmartSlots({
+        salonId,
+        date: String(date),
+        serviceDuration: parseInt(String(duration), 10),
+        servicePrice,
+        stylistMemberId: stylist_member_id ? String(stylist_member_id) : undefined,
+      });
+
+      ApiResponse.success(res, { data: result });
     } catch (error) {
       next(error);
     }
