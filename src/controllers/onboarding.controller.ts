@@ -65,7 +65,9 @@ export class OnboardingController {
       }
       if (gst) legalInfo.gst = gst;
 
-      const account: any = await rzp.createLinkedAccount({
+      let account: any;
+      try {
+        account = await rzp.createLinkedAccount({
         email: contact_email,
         phone: contact_phone,
         legal_business_name,
@@ -95,6 +97,12 @@ export class OnboardingController {
           },
         },
       });
+      } catch (rzpError: any) {
+        const errMsg = rzpError?.error?.description || rzpError?.message || 'Unknown Razorpay error';
+        const errCode = rzpError?.error?.code || 'UNKNOWN';
+        console.error('[Onboarding] Razorpay createLinkedAccount failed:', JSON.stringify(rzpError?.error || rzpError, null, 2));
+        throw ApiError.badRequest(`Razorpay: ${errMsg} (${errCode})`);
+      }
 
       // Step 2: Request product configuration (enable Route)
       let productConfig: any = null;
