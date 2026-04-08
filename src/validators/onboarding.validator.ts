@@ -18,6 +18,7 @@ export const createLinkedAccountValidator = [
     .matches(/^[6-9]\d{9}$/)
     .withMessage('Valid 10-digit Indian phone number required'),
   body('pan')
+    .optional({ nullable: true })
     .matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/)
     .withMessage('Invalid PAN format (e.g., ABCDE1234F)'),
   body('gst')

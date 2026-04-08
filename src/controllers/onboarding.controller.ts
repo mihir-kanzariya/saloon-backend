@@ -58,22 +58,35 @@ export class OnboardingController {
       const clientIp = req.ip || '127.0.0.1';
 
       // Step 1: Create linked account on Razorpay
+      // For individual business type, PAN goes in legal_info only for non-individual types
+      const legalInfo: Record<string, any> = {};
+      if (business_type && business_type !== 'individual' && pan) {
+        legalInfo.pan = pan;
+      }
+      if (gst) legalInfo.gst = gst;
+
       const account: any = await rzp.createLinkedAccount({
         email: contact_email,
         phone: contact_phone,
         legal_business_name,
         business_type: business_type || 'individual',
         contact_name,
-        legal_info: {
-          pan,
-          ...(gst && { gst }),
-        },
+        ...(Object.keys(legalInfo).length > 0 && { legal_info: legalInfo }),
         profile: {
-          category: 'services',
-          subcategory: 'beauty_and_personal_care',
+          category: 'healthcare',
+          subcategory: 'clinic',
           addresses: {
             operation: {
               street1: salon.address || '123 Main Road',
+              street2: salon.city || 'Ahmedabad',
+              city: salon.city || 'Ahmedabad',
+              state: OnboardingController.normalizeState(salon.state || 'Gujarat'),
+              postal_code: parseInt(salon.pincode || '380001'),
+              country: 'IN',
+            },
+            registered: {
+              street1: salon.address || '123 Main Road',
+              street2: salon.city || 'Ahmedabad',
               city: salon.city || 'Ahmedabad',
               state: OnboardingController.normalizeState(salon.state || 'Gujarat'),
               postal_code: parseInt(salon.pincode || '380001'),
