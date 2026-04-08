@@ -122,7 +122,7 @@ class RazorpayService {
   async requestProductConfig(accountId: string, params: {
     product_name: string;
     tnc_accepted: boolean;
-    ip: string;
+    ip?: string;
   }) {
     return this.retryWithBackoff(
       () => this.rzp.products.requestProductConfiguration(accountId, params),
