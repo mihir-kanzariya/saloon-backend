@@ -446,26 +446,49 @@ export class WebhookController {
     const accountEntity = payload.payload?.account?.entity;
     if (!accountEntity) return;
 
+    // Razorpay webhook sends ID without 'acc_' prefix, but DB may store with prefix
+    const entityId = accountEntity.id;
+    const prefixedId = entityId.startsWith('acc_') ? entityId : `acc_${entityId}`;
+
     const linkedAccount = await LinkedAccount.findOne({
-      where: { razorpay_account_id: accountEntity.id },
+      where: { [Op.or]: [{ razorpay_account_id: entityId }, { razorpay_account_id: prefixedId }] },
     });
 
-    if (!linkedAccount) return;
+    if (!linkedAccount) {
+      console.warn('[Webhook] No linked account found for ID:', entityId, 'or', prefixedId);
+      return;
+    }
+
+    // Determine account status from webhook event type + entity fields
+    // Razorpay entity uses 'activated' (boolean) not 'status' (string)
+    const eventType = payload.event;
+    let accountStatus = 'created';
+    if (eventType === 'account.activated' || accountEntity.activated === true) {
+      accountStatus = 'activated';
+    } else if (eventType === 'account.suspended' || accountEntity.suspended_at) {
+      accountStatus = 'suspended';
+    } else if (eventType === 'account.needs_clarification') {
+      accountStatus = 'needs_clarification';
+    } else if (eventType === 'account.under_review') {
+      accountStatus = 'under_review';
+    }
 
     let kycStatus = linkedAccount.kyc_status;
     let payoutEnabled = false;
 
-    if (accountEntity.status === 'activated') {
+    if (accountStatus === 'activated') {
       kycStatus = 'verified';
       payoutEnabled = true;
-    } else if (accountEntity.status === 'suspended') {
+    } else if (accountStatus === 'suspended') {
       kycStatus = 'failed';
-    } else if (['needs_clarification', 'under_review'].includes(accountEntity.status)) {
+    } else if (['needs_clarification', 'under_review'].includes(accountStatus)) {
       kycStatus = 'pending';
     }
 
+    console.log(`[Webhook] Account ${prefixedId} status: ${accountStatus} → kyc: ${kycStatus}, payout: ${payoutEnabled}`);
+
     await linkedAccount.update({
-      status: accountEntity.status,
+      status: accountStatus,
       kyc_status: kycStatus,
       ...(accountEntity.status === 'activated' ? { activated_at: new Date() } : {}),
     });
