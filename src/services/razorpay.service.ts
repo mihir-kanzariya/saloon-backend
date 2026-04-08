@@ -100,7 +100,7 @@ class RazorpayService {
     legal_info?: { pan?: string; gst?: string };
     contact_info?: Record<string, any>;
   }) {
-    return this.retryWithBackoff(() => this.rzp.accounts.create(params), 'createLinkedAccount');
+    return this.retryWithBackoff(() => this.rzp.accounts.create({ ...params, type: 'route' }), 'createLinkedAccount');
   }
 
   async fetchLinkedAccount(accountId: string) {
