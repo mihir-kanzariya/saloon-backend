@@ -6,6 +6,30 @@ import { ApiResponse } from '../utils/apiResponse';
 import { ApiError } from '../utils/apiError';
 
 export class OnboardingController {
+  // Map common state misspellings to Razorpay-accepted names
+  private static readonly STATE_MAP: Record<string, string> = {
+    'gujrat': 'Gujarat', 'gujrath': 'Gujarat', 'gujarat': 'Gujarat',
+    'maharashtra': 'Maharashtra', 'maharastra': 'Maharashtra',
+    'rajasthan': 'Rajasthan', 'rajshthan': 'Rajasthan',
+    'karnataka': 'Karnataka', 'karnatak': 'Karnataka',
+    'tamilnadu': 'Tamil Nadu', 'tamil nadu': 'Tamil Nadu',
+    'delhi': 'Delhi', 'new delhi': 'Delhi',
+    'up': 'Uttar Pradesh', 'uttar pradesh': 'Uttar Pradesh',
+    'mp': 'Madhya Pradesh', 'madhya pradesh': 'Madhya Pradesh',
+    'wb': 'West Bengal', 'west bengal': 'West Bengal',
+    'ap': 'Andhra Pradesh', 'andhra pradesh': 'Andhra Pradesh',
+    'telangana': 'Telangana', 'telengana': 'Telangana',
+    'kerala': 'Kerala', 'punjab': 'Punjab', 'haryana': 'Haryana',
+    'bihar': 'Bihar', 'odisha': 'Odisha', 'orissa': 'Odisha',
+    'goa': 'Goa', 'assam': 'Assam', 'jharkhand': 'Jharkhand',
+    'uttarakhand': 'Uttarakhand', 'chhattisgarh': 'Chhattisgarh',
+  };
+
+  static normalizeState(state: string): string {
+    const key = state.trim().toLowerCase();
+    return OnboardingController.STATE_MAP[key] || state.trim();
+  }
+
   /**
    * POST /salons/:salonId/onboarding/linked-account
    * Create Razorpay linked account for salon (3-step flow).
@@ -49,10 +73,10 @@ export class OnboardingController {
           subcategory: 'beauty_and_personal_care',
           addresses: {
             operation: {
-              street1: salon.address,
-              city: salon.city || 'Unknown',
-              state: salon.state || 'Unknown',
-              postal_code: parseInt(salon.pincode || '000000'),
+              street1: salon.address || '123 Main Road',
+              city: salon.city || 'Ahmedabad',
+              state: OnboardingController.normalizeState(salon.state || 'Gujarat'),
+              postal_code: parseInt(salon.pincode || '380001'),
               country: 'IN',
             },
           },
