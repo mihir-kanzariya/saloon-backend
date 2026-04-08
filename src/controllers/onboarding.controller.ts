@@ -110,10 +110,10 @@ export class OnboardingController {
         productConfig = await rzp.requestProductConfig(account.id, {
           product_name: 'route',
           tnc_accepted: true,
-          ip: clientIp,
         });
-      } catch (err) {
-        console.warn('[Onboarding] Product config request failed, will retry later:', err);
+        console.log('[Onboarding] Product config created:', productConfig?.id);
+      } catch (err: any) {
+        console.error('[Onboarding] Product config failed:', err?.error?.description || err?.message);
       }
 
       // Step 3: Set bank account for settlements
@@ -126,10 +126,10 @@ export class OnboardingController {
               beneficiary_name: bank_beneficiary_name,
             },
             tnc_accepted: true,
-            ip: clientIp,
           });
-        } catch (err) {
-          console.warn('[Onboarding] Bank details setup failed, will retry later:', err);
+          console.log('[Onboarding] Bank details set successfully');
+        } catch (err: any) {
+          console.error('[Onboarding] Bank details failed:', err?.error?.description || err?.message);
         }
       }
 
