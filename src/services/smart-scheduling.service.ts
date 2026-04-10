@@ -28,6 +28,11 @@ interface SmartSlot {
   // 'last_slot' | 'fills_gap_perfectly' | null
 }
 
+interface PeriodStats {
+  available: number;
+  total: number;
+}
+
 interface SmartSlotsResponse {
   slots: SmartSlot[];
   summary: {
@@ -37,6 +42,12 @@ interface SmartSlotsResponse {
     perfectFitSlots: number;
     regularSlots: number;
     utilization: number;
+    bookedSlots?: number;
+    totalPossibleSlots?: number;
+    earlyMorning?: PeriodStats;
+    morning?: PeriodStats;
+    afternoon?: PeriodStats;
+    evening?: PeriodStats;
   };
 }
 
@@ -206,28 +217,30 @@ export class SmartSchedulingService {
       });
     }
 
-    // 10. Also include unavailable slots (grayed out)
-    const unavailableSlots: SmartSlot[] = rawSlots
-      .filter((s: any) => !s.available)
-      .filter((s: any) => timeToMinutes(s.time) >= effectiveOpenMin)
-      .map((s: any) => ({
-        time: s.time,
-        endTime: addMinutesToTime(s.time, serviceDuration),
-        available: false,
-        slotType: 'regular' as const,
-        discount: 0,
-        discountAmount: 0,
-        originalPrice: servicePrice,
-        finalPrice: servicePrice,
-        reason: null,
-      }));
-
-    const allSlots = [...smartSlots, ...unavailableSlots].sort(
+    const allSlots = [...smartSlots].sort(
       (a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)
     );
 
     const smartCount = smartSlots.filter(s => s.slotType === 'smart').length;
     const perfectCount = smartSlots.filter(s => s.slotType === 'perfect_fit').length;
+
+    // Calculate period-level stats for scarcity display
+    const periodStats = (fromHour: number, toHour: number) => {
+      const periodRaw = rawSlots.filter((s: any) => {
+        const h = parseInt(s.time.split(':')[0]);
+        return h >= fromHour && h < toHour;
+      });
+      const periodAvailable = periodRaw.filter((s: any) => s.available).length;
+      return { available: periodAvailable, total: periodRaw.length };
+    };
+
+    const morning = periodStats(6, 12);
+    const afternoon = periodStats(12, 17);
+    const evening = periodStats(17, 24);
+    const earlyMorning = periodStats(0, 6);
+
+    const bookedSlots = rawSlots.filter((s: any) => !s.available).length;
+    const totalPossibleSlots = rawSlots.length;
 
     return {
       slots: allSlots,
@@ -238,6 +251,12 @@ export class SmartSchedulingService {
         perfectFitSlots: perfectCount,
         regularSlots: smartSlots.length - smartCount - perfectCount,
         utilization: Math.round(utilization * 100) / 100,
+        bookedSlots,
+        totalPossibleSlots,
+        earlyMorning,
+        morning,
+        afternoon,
+        evening,
       },
     };
   }
