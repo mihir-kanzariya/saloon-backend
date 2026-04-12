@@ -109,6 +109,7 @@ export class SalonController {
             [sequelize.literal(distanceFormula), 'distance'],
             [sequelize.literal(`(SELECT MIN(price) FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true)`), 'min_price'],
             [sequelize.literal(`(SELECT MAX(price) FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true)`), 'max_price'],
+            [sequelize.literal(`(SELECT COUNT(*) FROM salon_members WHERE salon_members.salon_id = "Salon".id AND salon_members.role = 'stylist' AND salon_members.is_active = true)`), 'stylist_count'],
           ],
         },
         order: [[sequelize.literal('distance'), 'ASC']],
