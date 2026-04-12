@@ -35,6 +35,8 @@ export class SchedulingService {
     const salon = await Salon.findByPk(salonId);
     if (!salon) throw new Error('Salon not found');
 
+    if (!totalDurationMinutes || totalDurationMinutes <= 0) return [];
+
     // Enforce advance booking window
     const advanceDays = salon.booking_settings?.advance_booking_days ?? 15;
     const requestedDate = new Date(date + 'T00:00:00+05:30'); // Parse in IST
@@ -48,11 +50,14 @@ export class SchedulingService {
     }
 
     const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
-    const operatingHours = salon.operating_hours[dayOfWeek];
+    const operatingHours = salon.operating_hours?.[dayOfWeek];
 
-    // Support both is_open:true and is_closed:false formats
+    // No hours defined for this day, or explicitly closed
+    if (!operatingHours || !operatingHours.open || !operatingHours.close) {
+      return [];
+    }
     const isClosed = operatingHours.is_closed === true || operatingHours.is_open === false;
-    if (!operatingHours || isClosed) {
+    if (isClosed) {
       return [];
     }
 
@@ -61,8 +66,8 @@ export class SchedulingService {
       return [];
     }
 
-    const slotDuration = salon.booking_settings.slot_duration_minutes || 15;
-    const buffer = salon.booking_settings.buffer_between_bookings_minutes || 5;
+    const slotDuration = Math.max(1, salon.booking_settings?.slot_duration_minutes || 15);
+    const buffer = Math.max(0, salon.booking_settings?.buffer_between_bookings_minutes ?? 5);
     const allSlots = generateTimeSlots(operatingHours.open, operatingHours.close, slotDuration);
 
     // Get stylists to check

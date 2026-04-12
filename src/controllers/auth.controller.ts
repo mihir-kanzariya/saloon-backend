@@ -6,6 +6,7 @@ import { ApiError } from '../utils/apiError';
 import { OtpService } from '../services/otp.service';
 import { TokenService } from '../services/token.service';
 import { sanitizePhone } from '../utils/helpers';
+import config from '../config';
 
 import User from '../models/User';
 
@@ -21,6 +22,16 @@ export class AuthController {
       }
 
       if (!user.is_active) throw ApiError.forbidden('Account is deactivated');
+
+      // Prevent OTP flooding: if OTP was sent recently and hasn't expired, reject
+      if (user.otp_expires_at && new Date(user.otp_expires_at) > new Date()) {
+        const remainingSec = Math.ceil((new Date(user.otp_expires_at).getTime() - Date.now()) / 1000);
+        // Allow resend only if less than half the expiry time remains
+        const halfExpiryMs = (config.app.otpExpiryMinutes * 60 * 1000) / 2;
+        if (new Date(user.otp_expires_at).getTime() - Date.now() > halfExpiryMs) {
+          throw ApiError.tooManyRequests(`OTP already sent. Please wait ${remainingSec} seconds before requesting again.`);
+        }
+      }
 
       const { otp, expiresAt } = await OtpService.sendOTP(phone);
       const hashedOtp = await bcrypt.hash(otp, 10);
@@ -43,6 +54,9 @@ export class AuthController {
       const phone = sanitizePhone(req.body.phone);
       const { otp } = req.body;
       if (!phone) throw ApiError.badRequest('Invalid phone number');
+      if (!otp || typeof otp !== 'string' || otp.length < 4 || otp.length > 6) {
+        throw ApiError.badRequest('Invalid OTP format');
+      }
 
       const user = await User.findOne({ where: { phone } });
       if (!user) throw ApiError.notFound('User not found. Please request OTP first.');

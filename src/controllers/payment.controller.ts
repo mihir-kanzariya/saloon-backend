@@ -22,6 +22,7 @@ import { generateTxId } from '../utils/id-generator';
 import { createEarningIfNotExists } from '../utils/earning.helper';
 import { auditLog } from '../utils/audit-logger';
 import { WalletService } from '../services/wallet.service';
+import RefundService from '../services/refund.service';
 
 
 
@@ -141,6 +142,14 @@ export class PaymentController {
         console.warn('[Payment] Could not fetch payment details from Razorpay:', err);
       }
 
+      // Verify payment amount matches (if Razorpay fetch succeeded)
+      if (rzpPayment && rzpPayment.amount) {
+        const expectedPaise = Math.round(parseFloat(payment.amount) * 100);
+        if (rzpPayment.amount !== expectedPaise) {
+          throw ApiError.badRequest('Payment amount mismatch');
+        }
+      }
+
       await sequelize.transaction(async (t: any) => {
         await payment.update({
           razorpay_payment_id,
@@ -154,6 +163,16 @@ export class PaymentController {
 
         // Update booking — confirm if awaiting_payment, update payment status
         const booking = await Booking.findByPk(payment.booking_id, { transaction: t });
+        if (!booking) throw ApiError.notFound('Booking not found');
+
+        // If booking was cancelled while payment was in-flight, mark payment but don't confirm
+        if (booking.status === 'cancelled') {
+          console.warn(`[Payment] Booking ${booking.id} was cancelled before payment verification. Triggering auto-refund.`);
+          // Don't update booking status — it stays cancelled.
+          // Refund will be handled after transaction commits.
+          return;
+        }
+
         const newPaymentStatus = payment.payment_type === 'token' ? 'token_paid' : 'paid';
 
         const bookingUpdates: Record<string, any> = { payment_status: newPaymentStatus };
@@ -190,6 +209,23 @@ export class PaymentController {
         amount: payment.amount,
         method: payment.method,
       });
+
+      // If booking was cancelled while payment was in-flight, auto-refund
+      const bookingAfterTx = await Booking.findByPk(payment.booking_id);
+      if (bookingAfterTx && bookingAfterTx.status === 'cancelled') {
+        try {
+          await RefundService.processRefund({
+            bookingId: payment.booking_id,
+            amount: parseFloat(payment.amount),
+            reason: 'Auto-refund: booking was cancelled before payment verification completed',
+            initiatedBy: 'system',
+          });
+        } catch (refundErr: any) {
+          console.warn(`[Payment] Auto-refund failed for cancelled booking ${payment.booking_id}:`, refundErr.message);
+        }
+        ApiResponse.success(res, { message: 'Payment verified but booking was already cancelled. Refund initiated.', data: payment });
+        return;
+      }
 
       ApiResponse.success(res, { message: 'Payment verified', data: payment });
     } catch (error) {

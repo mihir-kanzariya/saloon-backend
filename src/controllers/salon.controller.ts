@@ -223,19 +223,24 @@ export class SalonController {
     }
   }
 
-  // Toggle favorite
+  // Toggle favorite (uses findOrCreate to prevent race conditions on double-tap)
   static async toggleFavorite(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { salonId } = req.params;
-      const existing = await FavoriteSalon.findOne({
+
+      // Verify salon exists
+      const salon = await Salon.findByPk(salonId, { attributes: ['id'] });
+      if (!salon) throw ApiError.notFound('Salon not found');
+
+      const [existing, created] = await FavoriteSalon.findOrCreate({
         where: { user_id: req.user!.id, salon_id: salonId },
+        defaults: { user_id: req.user!.id, salon_id: salonId },
       });
 
-      if (existing) {
+      if (!created) {
         await existing.destroy();
         ApiResponse.success(res, { message: 'Removed from favorites', data: { is_favorite: false } });
       } else {
-        await FavoriteSalon.create({ user_id: req.user!.id, salon_id: salonId });
         ApiResponse.success(res, { message: 'Added to favorites', data: { is_favorite: true } });
       }
     } catch (error) {
@@ -262,12 +267,11 @@ export class SalonController {
     }
   }
 
-  // Remove favorite
+  // Remove favorite (idempotent — no error if already removed)
   static async removeFavorite(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { salonId } = req.params;
-      const deleted = await FavoriteSalon.destroy({ where: { user_id: req.user!.id, salon_id: salonId } });
-      if (!deleted) throw ApiError.notFound('Favorite not found');
+      await FavoriteSalon.destroy({ where: { user_id: req.user!.id, salon_id: salonId } });
       ApiResponse.success(res, { message: 'Removed from favorites' });
     } catch (error) {
       next(error);
@@ -583,7 +587,7 @@ export class SalonController {
       // Get top rated salons nearby (if lat/lng provided)
       const { lat, lng } = req.query;
       let topRated: any[] = [];
-      if (lat && lng) {
+      if (lat && lng && Number.isFinite(parseFloat(lat as string)) && Number.isFinite(parseFloat(lng as string))) {
         topRated = await sequelize.query(`
           SELECT id, name, cover_image, rating_avg, rating_count, address,
             (6371 * acos(LEAST(1.0, cos(radians(:lat)) * cos(radians(latitude)) * cos(radians(longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(latitude))))) as distance

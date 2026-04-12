@@ -31,6 +31,21 @@ export class BookingController {
     try {
       const { salon_id, service_ids, booking_date, start_time, stylist_member_id, payment_mode, customer_notes, slot_type: requestedSlotType } = req.body;
 
+      // Validate inputs
+      if (!service_ids || !Array.isArray(service_ids) || service_ids.length === 0) {
+        throw ApiError.badRequest('At least one service is required');
+      }
+      if (!booking_date || !start_time) {
+        throw ApiError.badRequest('Booking date and start time are required');
+      }
+
+      // Reject past dates
+      const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayStr = todayIST.toISOString().split('T')[0];
+      if (booking_date < todayStr) {
+        throw ApiError.badRequest('Cannot create bookings for past dates');
+      }
+
       // Validate salon
       const salon = await Salon.findByPk(salon_id);
       if (!salon || !salon.is_active) throw ApiError.notFound('Salon not found or inactive');
@@ -64,7 +79,7 @@ export class BookingController {
       const services = await Service.findAll({
         where: { id: { [Op.in]: service_ids }, salon_id, is_active: true },
       });
-      if (services.length !== service_ids.length) throw ApiError.badRequest('One or more services not found');
+      if (services.length !== service_ids.length) throw ApiError.badRequest('One or more services not found or inactive');
 
       // Calculate total duration and amount
       const totalDuration = services.reduce((sum: number, s: any) => sum + s.duration_minutes, 0);
@@ -221,6 +236,21 @@ export class BookingController {
   static async createWithPayment(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { salon_id, service_ids, booking_date, start_time, stylist_member_id, customer_notes, promo_code, slot_type: requestedSlotType } = req.body;
+
+      // Validate inputs
+      if (!service_ids || !Array.isArray(service_ids) || service_ids.length === 0) {
+        throw ApiError.badRequest('At least one service is required');
+      }
+      if (!booking_date || !start_time) {
+        throw ApiError.badRequest('Booking date and start time are required');
+      }
+
+      // Reject past dates
+      const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayStrPay = todayIST.toISOString().split('T')[0];
+      if (booking_date < todayStrPay) {
+        throw ApiError.badRequest('Cannot create bookings for past dates');
+      }
 
       const salon = await Salon.findByPk(salon_id);
       if (!salon || !salon.is_active) throw ApiError.notFound('Salon not found or inactive');
@@ -466,10 +496,22 @@ export class BookingController {
 
       if (!date || !duration) throw ApiError.badRequest('Date and duration are required');
 
+      const durationMin = parseInt(String(duration), 10);
+      if (!Number.isFinite(durationMin) || durationMin <= 0 || durationMin > 480) {
+        throw ApiError.badRequest('Duration must be between 1 and 480 minutes');
+      }
+
+      // Reject past dates
+      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayStr = today.toISOString().split('T')[0];
+      if (String(date) < todayStr) {
+        throw ApiError.badRequest('Cannot fetch slots for a past date');
+      }
+
       const slots = await SchedulingService.getAvailableSlots(
         salonId,
         String(date),
-        parseInt(String(duration), 10),
+        durationMin,
         stylist_member_id ? String(stylist_member_id) : undefined
       );
 
@@ -487,12 +529,25 @@ export class BookingController {
 
       if (!date || !duration) throw ApiError.badRequest('Date and duration are required');
 
+      const durationMin = parseInt(String(duration), 10);
+      if (!Number.isFinite(durationMin) || durationMin <= 0 || durationMin > 480) {
+        throw ApiError.badRequest('Duration must be between 1 and 480 minutes');
+      }
+
+      // Reject past dates
+      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayStr = today.toISOString().split('T')[0];
+      if (String(date) < todayStr) {
+        throw ApiError.badRequest('Cannot fetch slots for a past date');
+      }
+
       const servicePrice = price ? parseFloat(String(price)) : 0;
-      const displayInterval = display_interval ? parseInt(String(display_interval), 10) : undefined;
+      const parsedDisplayInterval = display_interval ? parseInt(String(display_interval), 10) : undefined;
+      const displayInterval = (parsedDisplayInterval && parsedDisplayInterval > 0) ? parsedDisplayInterval : undefined;
       const result = await SmartSchedulingService.getSmartSlots({
         salonId,
         date: String(date),
-        serviceDuration: parseInt(String(duration), 10),
+        serviceDuration: durationMin,
         servicePrice,
         stylistMemberId: stylist_member_id ? String(stylist_member_id) : undefined,
         displayInterval,
@@ -594,6 +649,7 @@ export class BookingController {
 
       // Validate status transitions
       const validTransitions: Record<string, string[]> = {
+        awaiting_payment: ['cancelled'],
         pending: ['confirmed', 'cancelled'],
         confirmed: ['in_progress', 'cancelled', 'no_show'],
         in_progress: ['completed', 'no_show'],
@@ -669,7 +725,7 @@ export class BookingController {
       if (!booking) throw ApiError.notFound('Booking not found');
       if (booking.customer_id !== req.user!.id) throw ApiError.forbidden('Access denied');
 
-      if (!['pending', 'confirmed'].includes(booking.status)) {
+      if (!['awaiting_payment', 'pending', 'confirmed'].includes(booking.status)) {
         throw ApiError.badRequest('Booking cannot be cancelled at this stage');
       }
 
@@ -784,7 +840,15 @@ export class BookingController {
       }
 
       await sequelize.transaction(async (t: any) => {
-        // Create payment record
+        // Create payment record (idempotent — check if payment already exists)
+        const existingPayment = await Payment.findOne({
+          where: { booking_id: booking.id, status: 'captured' },
+          transaction: t,
+        });
+        if (existingPayment) {
+          throw ApiError.badRequest('Payment already collected');
+        }
+
         await Payment.create({
           booking_id: booking.id,
           user_id: booking.customer_id,
@@ -798,20 +862,24 @@ export class BookingController {
         // Update booking payment status
         await booking.update({ payment_status: 'paid' }, { transaction: t });
 
-        // Create earning record
+        // Create earning record (atomic dedup via findOrCreate)
         const commissionPercent = config.app.platformCommissionPercent;
         const totalAmount = parseFloat(booking.total_amount);
         const commissionAmount = (totalAmount * commissionPercent) / 100;
         const netAmount = totalAmount - commissionAmount;
 
-        await SalonEarning.create({
-          salon_id: booking.salon_id,
-          booking_id: booking.id,
-          total_amount: totalAmount,
-          commission_percent: commissionPercent,
-          commission_amount: commissionAmount,
-          net_amount: netAmount,
-        }, { transaction: t });
+        await SalonEarning.findOrCreate({
+          where: { booking_id: booking.id },
+          defaults: {
+            salon_id: booking.salon_id,
+            booking_id: booking.id,
+            total_amount: totalAmount,
+            commission_percent: commissionPercent,
+            commission_amount: commissionAmount,
+            net_amount: netAmount,
+          },
+          transaction: t,
+        });
       });
 
       // H.2: Calculate breakdown for response

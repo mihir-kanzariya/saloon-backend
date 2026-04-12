@@ -66,6 +66,8 @@ export class SmartSchedulingService {
   }): Promise<SmartSlotsResponse> {
     const { salonId, date, serviceDuration, servicePrice, stylistMemberId, displayInterval } = params;
 
+    if (!serviceDuration || serviceDuration <= 0) return this.emptyResponse();
+
     // 1. Get salon config
     const salon = await Salon.findByPk(salonId);
     if (!salon || !salon.is_active) {
@@ -90,6 +92,7 @@ export class SmartSchedulingService {
 
     const openMin = timeToMinutes(hours.open);
     const closeMin = timeToMinutes(hours.close);
+    if (closeMin <= openMin) return this.emptyResponse();
     const totalWorkingMin = closeMin - openMin;
 
     // 3. Get raw available slots from existing system (respects stylist availability, breaks, leaves)
@@ -226,7 +229,7 @@ export class SmartSchedulingService {
     const perfectCount = smartSlots.filter(s => s.slotType === 'perfect_fit').length;
 
     // Filter to display interval — keep all smart/perfect_fit, thin out regular slots
-    if (displayInterval && displayInterval > 0) {
+    if (displayInterval && Number.isFinite(displayInterval) && displayInterval > 0) {
       allSlots = allSlots.filter(s => {
         if (s.slotType !== 'regular') return true;
         const min = timeToMinutes(s.time);

@@ -25,6 +25,8 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
 const toRad = (deg: number): number => deg * (Math.PI / 180);
 
 export const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes: number): string[] => {
+  if (!intervalMinutes || intervalMinutes <= 0) return [];
+
   const slots: string[] = [];
   const [startH, startM] = startTime.split(':').map(Number);
   const [endH, endM] = endTime.split(':').map(Number);
@@ -32,13 +34,18 @@ export const generateTimeSlots = (startTime: string, endTime: string, intervalMi
   let currentMinutes = startH * 60 + startM;
   const endMinutes = endH * 60 + endM;
 
-  while (currentMinutes + intervalMinutes <= endMinutes) {
+  // Safety: cap at 1440 iterations (24 hours at 1-minute intervals)
+  const maxIterations = 1440;
+  let iterations = 0;
+
+  while (currentMinutes + intervalMinutes <= endMinutes && iterations < maxIterations) {
     const hours = Math.floor(currentMinutes / 60);
     const minutes = currentMinutes % 60;
     slots.push(
       `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
     );
     currentMinutes += intervalMinutes;
+    iterations++;
   }
 
   return slots;
