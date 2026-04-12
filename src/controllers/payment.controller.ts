@@ -158,10 +158,12 @@ export class PaymentController {
 
         const bookingUpdates: Record<string, any> = { payment_status: newPaymentStatus };
 
-        // Pay-first flow: move from awaiting_payment → confirmed
+        // Pay-first flow: move from awaiting_payment → confirmed/pending
         if (booking.status === 'awaiting_payment') {
           const salon = await Salon.findByPk(booking.salon_id, { attributes: ['booking_settings'], transaction: t });
-          bookingUpdates.status = salon?.booking_settings?.auto_accept_bookings ? 'confirmed' : 'pending';
+          // Default to confirmed for online payments (auto_accept must be explicitly false to require manual approval)
+          const autoAccept = salon?.booking_settings?.auto_accept_bookings !== false;
+          bookingUpdates.status = autoAccept ? 'confirmed' : 'pending';
           bookingUpdates.payment_expires_at = null; // Clear hold timer
         }
 
