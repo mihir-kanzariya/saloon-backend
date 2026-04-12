@@ -86,7 +86,7 @@ export class SalonController {
   // Get nearby salons
   static async getNearby(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { lat, lng, radius = 10, gender_type, search } = req.query;
+      const { lat, lng, radius = 10, gender_type, search, sort } = req.query;
       const { page, limit, offset } = parsePagination(req.query);
 
       if (!lat || !lng) throw ApiError.badRequest('Latitude and longitude are required');
@@ -145,7 +145,27 @@ export class SalonController {
         attributes: {
           include: extraAttributes,
         },
-        order: [[sequelize.literal('distance'), 'ASC']],
+        order: (() => {
+          switch (sort) {
+            case 'rating':
+              return [
+                [sequelize.literal('rating_avg'), 'DESC'],
+                [sequelize.literal('distance'), 'ASC'],
+              ];
+            case 'price_low':
+              return [
+                [sequelize.literal('min_price'), 'ASC'],
+                [sequelize.literal('distance'), 'ASC'],
+              ];
+            case 'price_high':
+              return [
+                [sequelize.literal('max_price'), 'DESC'],
+                [sequelize.literal('distance'), 'ASC'],
+              ];
+            default: // 'distance' or unspecified
+              return [[sequelize.literal('distance'), 'ASC']];
+          }
+        })(),
         limit,
         offset,
         subQuery: false,
