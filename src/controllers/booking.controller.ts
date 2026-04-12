@@ -511,9 +511,9 @@ export class BookingController {
       const { page, limit, offset } = parsePagination(req.query);
       const where: any = { customer_id: req.user!.id };
 
-      // Handle virtual status 'upcoming' (maps to pending/confirmed/in_progress)
+      // Handle virtual status 'upcoming' (maps to awaiting_payment/pending/confirmed/in_progress)
       if (status === 'upcoming') {
-        where.status = { [Op.in]: ['pending', 'confirmed', 'in_progress'] };
+        where.status = { [Op.in]: ['awaiting_payment', 'pending', 'confirmed', 'in_progress'] };
       } else if (status) {
         where.status = status;
       }
@@ -735,8 +735,8 @@ export class BookingController {
       // Handle upcoming/past filters
       const today = new Date().toISOString().split('T')[0];
       if (filter === 'upcoming') {
-        where.booking_date = { [Op.gt]: today };
-        where.status = { [Op.in]: ['pending', 'confirmed'] };
+        where.booking_date = { [Op.gte]: today };
+        where.status = { [Op.in]: ['awaiting_payment', 'pending', 'confirmed'] };
       } else if (filter === 'past') {
         where[Op.or] = [
           { booking_date: { [Op.lt]: today } },
