@@ -26,6 +26,7 @@ import Wallet from './Wallet';
 import WalletLedger from './WalletLedger';
 import PromoCode from './PromoCode';
 import PromoUsage from './PromoUsage';
+import SearchAnalytics from './SearchAnalytics';
 
 // =====================
 // User <-> Salon
@@ -345,4 +346,5 @@ export {
   WalletLedger,
   PromoCode,
   PromoUsage,
+  SearchAnalytics,
 };

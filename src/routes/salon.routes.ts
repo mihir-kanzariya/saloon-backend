@@ -13,6 +13,11 @@ router.get('/user/favorites', authenticate, SalonController.getFavorites);
 router.delete('/user/favorites/:salonId', authenticate, SalonController.removeFavorite);
 router.post('/', authenticate, validate(createSalonValidation), SalonController.create);
 
+// Search endpoints
+router.get('/search/suggestions', optionalAuth, SalonController.searchSuggestions);
+router.get('/search/trending', optionalAuth, SalonController.getTrending);
+router.post('/search/track', optionalAuth, SalonController.trackSearch);
+
 // Parameterized routes AFTER static paths
 router.get('/:salonId', optionalAuth, validate(salonIdValidation), SalonController.getById);
 router.get('/:salonId/stats', authenticate, authorizeSalonMember('owner', 'manager', 'receptionist', 'stylist'), SalonController.getStats);

@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 import { AuthRequest } from '../types';
 import { ApiResponse } from '../utils/apiResponse';
@@ -106,6 +106,8 @@ export class SalonController {
           { name: { [Op.iLike]: `%${search}%` } },
           { address: { [Op.iLike]: `%${search}%` } },
           { city: { [Op.iLike]: `%${search}%` } },
+          // Also match salons that have a service whose name matches
+          sequelize.literal(`EXISTS (SELECT 1 FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true AND services.name ILIKE :searchPattern)`),
         ];
       }
 
@@ -126,6 +128,10 @@ export class SalonController {
       ];
 
       const replacements: any = { userLat, userLng, maxRadius };
+
+      if (search) {
+        replacements.searchPattern = `%${search}%`;
+      }
 
       if (userId) {
         extraAttributes.push(
@@ -489,6 +495,115 @@ export class SalonController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  // Search suggestions (services, salons, stylists)
+  static async searchSuggestions(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { q, lat, lng } = req.query;
+      if (!q || (q as string).length < 2) {
+        ApiResponse.success(res, { data: { services: [], salons: [], stylists: [] } });
+        return;
+      }
+      const query = `%${q}%`;
+
+      // 1. Matching services (distinct names with min price and salon count)
+      const services = await sequelize.query(`
+        SELECT s.name, MIN(s.price) as min_price, COUNT(DISTINCT s.salon_id) as salon_count
+        FROM services s
+        JOIN salons sl ON sl.id = s.salon_id AND sl.is_active = true
+        WHERE s.is_active = true AND s.name ILIKE :query
+        GROUP BY s.name
+        ORDER BY salon_count DESC
+        LIMIT 5
+      `, { replacements: { query }, type: QueryTypes.SELECT });
+
+      // 2. Matching salons (top 5 by rating)
+      const salons = await sequelize.query(`
+        SELECT id, name, cover_image, rating_avg, rating_count, address, city
+        FROM salons
+        WHERE is_active = true AND (name ILIKE :query OR address ILIKE :query OR city ILIKE :query)
+        ORDER BY rating_avg DESC
+        LIMIT 5
+      `, { replacements: { query }, type: QueryTypes.SELECT });
+
+      // 3. Matching stylists (top 5)
+      const stylists = await sequelize.query(`
+        SELECT u.id, u.name, u.profile_photo, sm.salon_id, sl.name as salon_name
+        FROM salon_members sm
+        JOIN users u ON u.id = sm.user_id
+        JOIN salons sl ON sl.id = sm.salon_id AND sl.is_active = true
+        WHERE sm.role = 'stylist' AND sm.is_active = true AND u.name ILIKE :query
+        LIMIT 5
+      `, { replacements: { query }, type: QueryTypes.SELECT });
+
+      ApiResponse.success(res, { data: { services, salons, stylists } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Trending searches and top rated salons
+  static async getTrending(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Get most booked services in the last 7 days
+      const trending = await sequelize.query(`
+        SELECT s.name, COUNT(bs.id) as booking_count, MIN(s.price) as min_price
+        FROM booking_services bs
+        JOIN services s ON s.id = bs.service_id
+        JOIN bookings b ON b.id = bs.booking_id
+        WHERE b.created_at >= NOW() - INTERVAL '7 days'
+          AND b.status IN ('pending', 'confirmed', 'completed', 'in_progress')
+        GROUP BY s.name
+        ORDER BY booking_count DESC
+        LIMIT 8
+      `, { type: QueryTypes.SELECT });
+
+      // Get top rated salons nearby (if lat/lng provided)
+      const { lat, lng } = req.query;
+      let topRated: any[] = [];
+      if (lat && lng) {
+        topRated = await sequelize.query(`
+          SELECT id, name, cover_image, rating_avg, rating_count, address,
+            (6371 * acos(LEAST(1.0, cos(radians(:lat)) * cos(radians(latitude)) * cos(radians(longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(latitude))))) as distance
+          FROM salons
+          WHERE is_active = true AND rating_avg > 0
+          ORDER BY rating_avg DESC, rating_count DESC
+          LIMIT 5
+        `, { replacements: { lat: parseFloat(lat as string), lng: parseFloat(lng as string) }, type: QueryTypes.SELECT });
+      }
+
+      ApiResponse.success(res, { data: { trending, topRated } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Track search query for analytics
+  static async trackSearch(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { query, result_count } = req.body;
+      if (!query || (query as string).length < 2) {
+        ApiResponse.success(res, { message: 'ok' });
+        return;
+      }
+
+      // Upsert into search_analytics table
+      await sequelize.query(`
+        INSERT INTO search_analytics (query, search_count, last_searched_at, result_count)
+        VALUES (:query, 1, NOW(), :result_count)
+        ON CONFLICT (query) DO UPDATE SET
+          search_count = search_analytics.search_count + 1,
+          last_searched_at = NOW(),
+          result_count = :result_count
+      `, { replacements: { query: (query as string).toLowerCase().trim(), result_count: result_count || 0 } });
+
+      ApiResponse.success(res, { message: 'ok' });
+    } catch (error) {
+      // Don't fail the request for analytics
+      console.error('[SearchAnalytics]', error);
+      ApiResponse.success(res, { message: 'ok' });
     }
   }
 }
