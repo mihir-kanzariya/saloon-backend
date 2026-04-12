@@ -508,15 +508,15 @@ export class SalonController {
       }
       const query = `%${q}%`;
 
-      // 1. Matching services (distinct names with min price and salon count)
+      // 1. Matching services (case-insensitive dedup, filter bad prices)
       const services = await sequelize.query(`
-        SELECT s.name, MIN(s.price) as min_price, COUNT(DISTINCT s.salon_id) as salon_count
+        SELECT INITCAP(LOWER(s.name)) as name, MIN(s.price) as min_price, COUNT(DISTINCT s.salon_id) as salon_count
         FROM services s
         JOIN salons sl ON sl.id = s.salon_id AND sl.is_active = true
-        WHERE s.is_active = true AND s.name ILIKE :query
-        GROUP BY s.name
-        ORDER BY salon_count DESC
-        LIMIT 5
+        WHERE s.is_active = true AND s.name ILIKE :query AND s.price >= 50
+        GROUP BY LOWER(s.name)
+        ORDER BY salon_count DESC, min_price ASC
+        LIMIT 6
       `, { replacements: { query }, type: QueryTypes.SELECT });
 
       // 2. Matching salons (top 5 by rating)
