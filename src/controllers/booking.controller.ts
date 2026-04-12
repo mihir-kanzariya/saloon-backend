@@ -483,17 +483,19 @@ export class BookingController {
   static async getSmartSlots(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const salonId = req.params.salonId as string;
-      const { date, duration, price, stylist_member_id } = req.query;
+      const { date, duration, price, stylist_member_id, display_interval } = req.query;
 
       if (!date || !duration) throw ApiError.badRequest('Date and duration are required');
 
       const servicePrice = price ? parseFloat(String(price)) : 0;
+      const displayInterval = display_interval ? parseInt(String(display_interval), 10) : undefined;
       const result = await SmartSchedulingService.getSmartSlots({
         salonId,
         date: String(date),
         serviceDuration: parseInt(String(duration), 10),
         servicePrice,
         stylistMemberId: stylist_member_id ? String(stylist_member_id) : undefined,
+        displayInterval,
       });
 
       ApiResponse.success(res, { data: result });

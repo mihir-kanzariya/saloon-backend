@@ -62,8 +62,9 @@ export class SmartSchedulingService {
     serviceDuration: number;
     servicePrice: number;
     stylistMemberId?: string;
+    displayInterval?: number;
   }): Promise<SmartSlotsResponse> {
-    const { salonId, date, serviceDuration, servicePrice, stylistMemberId } = params;
+    const { salonId, date, serviceDuration, servicePrice, stylistMemberId, displayInterval } = params;
 
     // 1. Get salon config
     const salon = await Salon.findByPk(salonId);
@@ -217,12 +218,21 @@ export class SmartSchedulingService {
       });
     }
 
-    const allSlots = [...smartSlots].sort(
+    let allSlots = [...smartSlots].sort(
       (a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)
     );
 
     const smartCount = smartSlots.filter(s => s.slotType === 'smart').length;
     const perfectCount = smartSlots.filter(s => s.slotType === 'perfect_fit').length;
+
+    // Filter to display interval — keep all smart/perfect_fit, thin out regular slots
+    if (displayInterval && displayInterval > 0) {
+      allSlots = allSlots.filter(s => {
+        if (s.slotType !== 'regular') return true;
+        const min = timeToMinutes(s.time);
+        return min % displayInterval === 0;
+      });
+    }
 
     // Calculate period-level stats for scarcity display
     const periodStats = (fromHour: number, toHour: number) => {
