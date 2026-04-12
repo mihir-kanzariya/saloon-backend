@@ -12,6 +12,12 @@ export const replyReviewValidation = [
   body('reply').trim().notEmpty().withMessage('Reply is required').isLength({ max: 1000 }),
 ];
 
+export const updateReviewValidation = [
+  body('salon_rating').optional().isInt({ min: 1, max: 5 }),
+  body('stylist_rating').optional().isInt({ min: 1, max: 5 }),
+  body('comment').optional().isString().isLength({ max: 1000 }),
+];
+
 export const reviewListValidation = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 50 }),

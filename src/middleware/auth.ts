@@ -40,6 +40,32 @@ export const authenticate = async (req: AuthRequest, _res: Response, next: NextF
   }
 };
 
+export const optionalAuth = async (req: AuthRequest, _res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, config.jwt.secret) as { id: string; phone: string; role: string };
+
+    const user = await User.findByPk(decoded.id, {
+      attributes: { exclude: ['otp', 'otp_expires_at'] },
+    });
+
+    if (user && user.is_active) {
+      req.user = user.toJSON();
+    }
+
+    next();
+  } catch (_error) {
+    // Token invalid/expired — proceed without user
+    next();
+  }
+};
+
 export const authorize = (...roles: string[]) => {
   return (req: AuthRequest, _res: Response, next: NextFunction): void => {
     if (!req.user) {

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database';
 import { AuthRequest } from '../types';
@@ -46,9 +46,23 @@ export class SalonController {
   }
 
   // Get salon by ID
-  static async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async getById(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.user?.id;
+      const extraAttributes: any[] = [];
+      const replacements: any = {};
+
+      if (userId) {
+        extraAttributes.push(
+          [sequelize.literal(`(SELECT COUNT(*) > 0 FROM favorite_salons WHERE favorite_salons.salon_id = "Salon".id AND favorite_salons.user_id = :userId)`), 'is_favorited']
+        );
+        replacements.userId = userId;
+      }
+
       const salon = await Salon.findByPk(req.params.salonId, {
+        attributes: {
+          include: extraAttributes,
+        },
         include: [
           { model: User, as: 'owner', attributes: ['id', 'name', 'phone', 'profile_photo'] },
           { model: Service, as: 'services', where: { is_active: true }, required: false },
@@ -59,7 +73,8 @@ export class SalonController {
             include: [{ model: User, as: 'user', attributes: ['id', 'name', 'profile_photo'] }],
           },
         ],
-      });
+        replacements,
+      } as any);
 
       if (!salon) throw ApiError.notFound('Salon not found');
       ApiResponse.success(res, { data: salon });
@@ -69,7 +84,7 @@ export class SalonController {
   }
 
   // Get nearby salons
-  static async getNearby(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async getNearby(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { lat, lng, radius = 10, gender_type, search } = req.query;
       const { page, limit, offset } = parsePagination(req.query);
@@ -102,21 +117,33 @@ export class SalonController {
         sequelize.literal(`${distanceFormula} <= :maxRadius`),
       ];
 
+      const userId = req.user?.id;
+      const extraAttributes: any[] = [
+        [sequelize.literal(distanceFormula), 'distance'],
+        [sequelize.literal(`(SELECT MIN(price) FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true)`), 'min_price'],
+        [sequelize.literal(`(SELECT MAX(price) FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true)`), 'max_price'],
+        [sequelize.literal(`(SELECT COUNT(*) FROM salon_members WHERE salon_members.salon_id = "Salon".id AND salon_members.role = 'stylist' AND salon_members.is_active = true)`), 'stylist_count'],
+      ];
+
+      const replacements: any = { userLat, userLng, maxRadius };
+
+      if (userId) {
+        extraAttributes.push(
+          [sequelize.literal(`(SELECT COUNT(*) > 0 FROM favorite_salons WHERE favorite_salons.salon_id = "Salon".id AND favorite_salons.user_id = :userId)`), 'is_favorited']
+        );
+        replacements.userId = userId;
+      }
+
       const { rows, count } = await Salon.findAndCountAll({
         where,
         attributes: {
-          include: [
-            [sequelize.literal(distanceFormula), 'distance'],
-            [sequelize.literal(`(SELECT MIN(price) FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true)`), 'min_price'],
-            [sequelize.literal(`(SELECT MAX(price) FROM services WHERE services.salon_id = "Salon".id AND services.is_active = true)`), 'max_price'],
-            [sequelize.literal(`(SELECT COUNT(*) FROM salon_members WHERE salon_members.salon_id = "Salon".id AND salon_members.role = 'stylist' AND salon_members.is_active = true)`), 'stylist_count'],
-          ],
+          include: extraAttributes,
         },
         order: [[sequelize.literal('distance'), 'ASC']],
         limit,
         offset,
         subQuery: false,
-        replacements: { userLat, userLng, maxRadius },
+        replacements,
       } as any);
 
       ApiResponse.paginated(res, { data: rows, page, limit, total: count });
@@ -204,6 +231,18 @@ export class SalonController {
       });
       const salons = rows.map((f: any) => f.salon);
       ApiResponse.paginated(res, { data: salons, page, limit, total: count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Remove favorite
+  static async removeFavorite(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { salonId } = req.params;
+      const deleted = await FavoriteSalon.destroy({ where: { user_id: req.user!.id, salon_id: salonId } });
+      if (!deleted) throw ApiError.notFound('Favorite not found');
+      ApiResponse.success(res, { message: 'Removed from favorites' });
     } catch (error) {
       next(error);
     }

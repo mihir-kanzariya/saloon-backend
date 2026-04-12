@@ -90,6 +90,101 @@ export class ReviewController {
     }
   }
 
+  static async update(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const review = await Review.findByPk(req.params.reviewId);
+      if (!review) throw ApiError.notFound('Review not found');
+      if (review.customer_id !== req.user!.id) throw ApiError.forbidden('You can only update your own reviews');
+
+      const { salon_rating, stylist_rating, comment } = req.body;
+
+      const updatedReview = await sequelize.transaction(async (t: any) => {
+        await review.update({
+          ...(salon_rating !== undefined && { salon_rating }),
+          ...(stylist_rating !== undefined && { stylist_rating }),
+          ...(comment !== undefined && { comment }),
+        }, { transaction: t });
+
+        // Recalculate salon rating_avg
+        const avgResult = await Review.findOne({
+          where: { salon_id: review.salon_id, is_visible: true },
+          attributes: [
+            [sequelize.fn('AVG', sequelize.col('salon_rating')), 'avg_rating'],
+            [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+          ],
+          transaction: t,
+          raw: true,
+        });
+
+        await Salon.update({
+          rating_avg: parseFloat(avgResult.avg_rating) || 0,
+          rating_count: parseInt(avgResult.count, 10) || 0,
+        }, { where: { id: review.salon_id }, transaction: t });
+
+        return review;
+      });
+
+      ApiResponse.success(res, { message: 'Review updated', data: updatedReview });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async delete(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const review = await Review.findByPk(req.params.reviewId);
+      if (!review) throw ApiError.notFound('Review not found');
+      if (review.customer_id !== req.user!.id) throw ApiError.forbidden('You can only delete your own reviews');
+
+      const salonId = review.salon_id;
+
+      await sequelize.transaction(async (t: any) => {
+        await review.destroy({ transaction: t });
+
+        // Recalculate salon rating_avg and rating_count
+        const avgResult = await Review.findOne({
+          where: { salon_id: salonId, is_visible: true },
+          attributes: [
+            [sequelize.fn('AVG', sequelize.col('salon_rating')), 'avg_rating'],
+            [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+          ],
+          transaction: t,
+          raw: true,
+        });
+
+        await Salon.update({
+          rating_avg: parseFloat(avgResult?.avg_rating) || 0,
+          rating_count: parseInt(avgResult?.count, 10) || 0,
+        }, { where: { id: salonId }, transaction: t });
+      });
+
+      ApiResponse.success(res, { message: 'Review deleted' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getMyReviews(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { page, limit, offset } = parsePagination(req.query);
+
+      const { rows, count } = await Review.findAndCountAll({
+        where: { customer_id: req.user!.id },
+        include: [
+          { model: Salon, as: 'salon', attributes: ['id', 'name', 'cover_image'] },
+          { model: Booking, as: 'booking', attributes: ['id', 'booking_date'] },
+        ],
+        order: [['created_at', 'DESC']],
+        limit,
+        offset,
+      });
+
+      ApiResponse.paginated(res, { data: rows, page, limit, total: count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async reply(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const review = await Review.findByPk(req.params.reviewId);
